@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="StealDeal.Services.Identity.API/StealDeal.Services.Identity.API.csproj" />
+  <Project Path="StealDeal.Services.Identity.Application/StealDeal.Services.Identity.Application.csproj" />
+  <Project Path="StealDeal.Services.Identity.Domain/StealDeal.Services.Identity.Domain.csproj" />
+  <Project Path="StealDeal.Services.Identity.Infrastructure/StealDeal.Services.Identity.Infrastructure.csproj" />
+</Solution>
