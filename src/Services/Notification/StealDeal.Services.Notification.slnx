@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="StealDeal.Services.Notification.API/StealDeal.Services.Notification.API.csproj" />
+  <Project Path="StealDeal.Services.Notification.Application/StealDeal.Services.Notification.Application.csproj" />
+  <Project Path="StealDeal.Services.Notification.Domain/StealDeal.Services.Notification.Domain.csproj" />
+  <Project Path="StealDeal.Services.Notification.Infrastructure/StealDeal.Services.Notification.Infrastructure.csproj" />
+</Solution>

@@ -1,0 +1,6 @@
+@StealDeal.Services.Notification.API_HostAddress = http://localhost:5053
+
+GET {{StealDeal.Services.Notification.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

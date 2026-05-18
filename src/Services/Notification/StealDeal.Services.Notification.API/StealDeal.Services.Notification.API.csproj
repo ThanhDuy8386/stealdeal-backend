@@ -10,9 +10,4 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\StealDeal.Services.Identity.Application\StealDeal.Services.Identity.Application.csproj" />
-    <ProjectReference Include="..\StealDeal.Services.Identity.Infrastructure\StealDeal.Services.Identity.Infrastructure.csproj" />
-  </ItemGroup>
-
 </Project>
