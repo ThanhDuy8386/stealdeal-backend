@@ -70,7 +70,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.HasKey(e => e.Id);
 
                 entity.HasOne(e => e.User)
-                      .WithOne(u => u.UserTrustScores)
+                      .WithOne(u => u.UserTrustScore)
                       .HasForeignKey<UserTrustScore>(e => e.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
             });

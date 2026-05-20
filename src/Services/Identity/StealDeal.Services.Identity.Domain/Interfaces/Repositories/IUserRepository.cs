@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using StealDeal.Services.Identity.Domain.Models;
 
 namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
@@ -6,8 +7,10 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
     {
         Task<User> GetByIdAsync(Guid id);
         Task<IEnumerable<User>> GetAllAsync();
-        Task<User> AddAsync(User entity);
+        Task AddAsync(User entity);
         Task UpdateAsync(User entity);
         Task DeleteAsync(User entity);
+        Task<User> GetByEmailAsync(string email);
+        Task<bool> IsEmailUniqueAsync(string email);
     }
 }

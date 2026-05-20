@@ -4,11 +4,11 @@ namespace StealDeal.Services.Identity.Domain.Models
 {
     public class OutboxMessage
     {
-        public Guid Id { get; protected set; } = Guid.NewGuid();
-        public string EventType { get; protected set; } = null!;
-        public string Payload { get; protected set; } = null!;
-        public DateTime? ProcessedAt { get; protected set; }
-        public string? Error { get; protected set; }
-        public DateTime CreatedAt { get; protected set; } = DateTime.UtcNow;
+        public Guid Id { get;  set; } = Guid.NewGuid();
+        public string EventType { get;  set; } = null!;
+        public string Payload { get;  set; } = null!;
+        public DateTime? ProcessedAt { get;  set; }
+        public string? Error { get;  set; }
+        public DateTime CreatedAt { get;  set; } = DateTime.UtcNow;
     }
 }

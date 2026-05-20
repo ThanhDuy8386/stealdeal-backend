@@ -1,6 +1,7 @@
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
 using StealDeal.Services.Identity.Domain.Models;
 using StealDeal.Services.Identity.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace StealDeal.Services.Identity.Infrastructure.Repositories
 {
@@ -13,29 +14,43 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             _context = context;
         }
 
-        public Task<User> AddAsync(User entity)
+        public async Task AddAsync(User entity)
         {
-            throw new NotImplementedException();
+            await _context.Users.AddAsync(entity);
         }
 
         public Task DeleteAsync(User entity)
         {
-            throw new NotImplementedException();
+            entity.IsDeleted = true;
+            entity.IsActive = false;
+            _context.Users.Update(entity);
+            return Task.CompletedTask;
         }
 
-        public Task<IEnumerable<User>> GetAllAsync()
+        public async Task<IEnumerable<User>> GetAllAsync()
         {
-            throw new NotImplementedException();
+            return await _context.Users.ToListAsync();
         }
 
-        public Task<User> GetByIdAsync(Guid id)
+        public async Task<User> GetByEmailAsync(string email)
         {
-            throw new NotImplementedException();
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
         }
 
-        public Task UpdateAsync(User entity)
+        public async Task<User> GetByIdAsync(Guid id)
         {
-            throw new NotImplementedException();
+            return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+        }
+
+        public async Task<bool> IsEmailUniqueAsync(string email)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            return user == null;
+        }
+
+        public async Task UpdateAsync(User entity)
+        {
+            _context.Users.Update(entity);
         }
     }
 }
