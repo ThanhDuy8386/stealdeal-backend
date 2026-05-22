@@ -3,7 +3,7 @@ using StealDeal.Services.Identity.Application.DTOs.Responses;
 
 namespace StealDeal.Services.Identity.Application.Services.Interfaces
 {
-    public interface IRefreshTokenRepository
+    public interface IAuthService
     {
         Task<TokenResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default);
         Task<TokenResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);

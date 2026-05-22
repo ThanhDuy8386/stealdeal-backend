@@ -19,7 +19,10 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
 
         public Task<RefreshToken?> GetByTokenHashAsync(string tokenHash)
         {
-            return _context.RefreshTokens.FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
+            return _context.RefreshTokens
+                .Include(rt => rt.User)
+                .ThenInclude(u => u.UserRoles)
+                .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
         }
 
         public void Update(RefreshToken refreshToken)
