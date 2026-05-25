@@ -50,14 +50,14 @@ namespace StealDeal.Services.Identity.Application.Services
             return response;
         }
 
-        public async Task<TokenResponse> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
+        public async Task<TokenResponse> RefreshAsync(RefreshTokenRequest refreshToken, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(refreshToken))
+            if (string.IsNullOrWhiteSpace(refreshToken.RefreshToken))
             {
                 throw new UnauthorizedAccessException("Invalid refresh token.");
             }
 
-            var refreshTokenHash = _jwtTokenGenerator.HashRefreshToken(refreshToken);
+            var refreshTokenHash = _jwtTokenGenerator.HashRefreshToken(refreshToken.RefreshToken);
             var storedToken = await _refreshTokenRepository.GetByTokenHashAsync(refreshTokenHash);
 
             if (storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)

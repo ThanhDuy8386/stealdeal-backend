@@ -136,3 +136,5 @@ How to use:
 - [ ] Wire DI in `Program.cs`.
 - [ ] Build and fix compile issues.
 - [ ] Add controller endpoints if not already present.
+- [x] Add Swagger UI with Bearer auth support for local API testing.
+- [x] Remove Swagger UI setup and return to Postman-based API testing.
