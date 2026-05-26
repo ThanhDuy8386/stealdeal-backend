@@ -10,7 +10,7 @@ namespace StealDeal.Services.Identity.Domain.Models
         public string Address { get;  set; } = null!;
         public string District { get;  set; } = null!;
         public string City { get;  set; } = null!;
-        public decimal Longitude { get;  set; }
+        public decimal Longtitude { get;  set; }
         public decimal Latitude { get;  set; }
         public bool IsDefault { get;  set; }
         public DateTime CreatedAt { get;  set; } = DateTime.UtcNow;

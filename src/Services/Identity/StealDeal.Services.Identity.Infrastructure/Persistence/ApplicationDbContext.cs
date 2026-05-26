@@ -16,6 +16,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         public DbSet<TrustScoreEvent> TrustScoreEvents { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<OauthProvider> OauthProviders { get; set; }
+        public DbSet<EmailVerification> EmailVerifications { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -55,7 +56,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.Property(e => e.Address).IsRequired().HasMaxLength(500);
                 entity.Property(e => e.District).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.City).IsRequired().HasMaxLength(100);
-                entity.Property(e => e.Longitude).HasColumnType("decimal(18, 6)");
+                entity.Property(e => e.Longtitude).HasColumnType("decimal(18, 6)");
                 entity.Property(e => e.Latitude).HasColumnType("decimal(18, 6)");
 
                 entity.HasOne(e => e.User)
@@ -112,6 +113,23 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                       .WithMany(u => u.OauthProviders)
                       .HasForeignKey(e => e.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // EmailVerifications Configuration
+            modelBuilder.Entity<EmailVerification>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.OtpHash).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.AttemptCount).HasDefaultValue(0);
+                entity.Property(e => e.ResendCount).HasDefaultValue(0);
+
+                entity.HasIndex(e => e.UserId);
+                entity.HasIndex(e => e.ExpiresAt);
+
+                entity.HasOne(e => e.User)
+                    .WithMany(u => u.EmailVerifications)
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // OutboxMessages Configuration

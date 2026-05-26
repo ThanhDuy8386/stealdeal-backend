@@ -1,3 +1,5 @@
+using System.Text.Json;
+using StealDeal.Services.Identity.Application.DTOs.Events;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
@@ -9,21 +11,27 @@ namespace StealDeal.Services.Identity.Application.Services
     public class AuthService : IAuthService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IEmailVerificationRepository _emailVerificationRepository;
         private readonly IRefreshTokenRepository _refreshTokenRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
+        private readonly IOutboxMessageRepository _outboxMessageRepository;
         public AuthService(
             IUserRepository userRepository, 
+            IEmailVerificationRepository emailVerificationRepository,
             IRefreshTokenRepository refreshTokenRepository, 
             IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
-            IJwtTokenGenerator jwtTokenGenerator)
+            IJwtTokenGenerator jwtTokenGenerator,
+            IOutboxMessageRepository outboxMessageRepository)
         {
             _userRepository = userRepository;
+            _emailVerificationRepository = emailVerificationRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _unitOfWork = unitOfWork;
             _passwordHasher = passwordHasher;
             _jwtTokenGenerator = jwtTokenGenerator;
+            _outboxMessageRepository = outboxMessageRepository;
         }
 
         public async Task<TokenResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -71,6 +79,7 @@ namespace StealDeal.Services.Identity.Application.Services
             }
 
             storedToken.IsRevoked = true;
+            storedToken.RevokedAt = DateTime.UtcNow;
             _refreshTokenRepository.Update(storedToken);
 
             var response = await IssueTokenPairAsync(storedToken.User);
@@ -99,7 +108,7 @@ namespace StealDeal.Services.Identity.Application.Services
                 PasswordHash = _passwordHasher.Hash(request.Password),
                 FullName = fullName,
                 Phone = request.Phone,
-                IsEmailVerify = false,
+                IsEmailVerified = false,
                 IsActive = true,
                 IsDeleted = false
             };
@@ -121,12 +130,122 @@ namespace StealDeal.Services.Identity.Application.Services
                 LastCalculatedAt = DateTime.UtcNow
             };
 
+            // OTP for email verification
+            var otp = GenerateOtp();
+            var otpHash = HashOtp(otp);
+            var otpExpiresAt = DateTime.UtcNow.AddMinutes(10);
+            var emailVerification = new EmailVerification
+            {
+                UserId = user.Id,
+                OtpHash = otpHash,
+                ExpiresAt = otpExpiresAt,
+                ConsumedAt = null,
+                RevokedAt = null,
+                AttemptCount = 0,
+                ResendCount = 0
+            };
+            user.EmailVerifications.Add(emailVerification);
+            
+            // Outbox message for sending OTP email
+            var payload = JsonSerializer.Serialize(new SendEmailVerificationOtpEvent
+            {
+                UserId = user.Id,
+                Email = user.Email,
+                FullName = user.FullName,
+                Otp = otp,
+                ExpiresAt = otpExpiresAt
+            });
+
+            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            {
+                EventType = "UserEmailVerificationRequested",
+                Payload = payload,
+                Status = "Pending"
+            });
+
             await _userRepository.AddAsync(user);
 
             var response = await IssueTokenPairAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
             return response;
+        }
+
+        public async Task VerifyEmailOtpAsync(VerifyEmailOtpRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                throw new InvalidOperationException("Email is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Otp))
+            {
+                throw new InvalidOperationException("OTP is required.");
+            }
+
+            var normalizedEmail = NormalizeEmail(request.Email);
+            var otpHash = HashOtp(request.Otp);
+            var verification  = await _emailVerificationRepository
+                .VerifyOtp(normalizedEmail, otpHash);
+            if (verification is null)
+            {
+                throw new InvalidOperationException("Invalid or expired OTP.");
+            }
+            verification.ConsumedAt = DateTime.UtcNow;
+            verification.User.IsEmailVerified = true;
+            _emailVerificationRepository.Update(verification);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        public async Task ResendOtpAsync(ResendOtpRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                throw new InvalidOperationException("Email is required.");
+            }
+            var normalizedEmail = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+            if (user is null)
+            {
+                throw new InvalidOperationException("User not found.");
+            }
+            if (user.IsEmailVerified)
+            {
+                throw new InvalidOperationException("Email is already verified.");
+            }
+            var activeVerification = await _emailVerificationRepository.GetActiveOtpByUserIdAsync(user.Id);
+            if (activeVerification != null)
+            {
+                activeVerification.RevokedAt = DateTime.UtcNow;
+                _emailVerificationRepository.Update(activeVerification);
+            }
+            var otp = GenerateOtp();
+            var otpHash = HashOtp(otp);
+            var otpExpiresAt = DateTime.UtcNow.AddMinutes(10);
+            var emailVerification = new EmailVerification
+            {
+                UserId = user.Id,
+                OtpHash = otpHash,
+                ExpiresAt = otpExpiresAt,
+                AttemptCount = 0,
+            };
+            await _emailVerificationRepository.AddAsync(emailVerification);
+            var payload = JsonSerializer.Serialize(new SendEmailVerificationOtpEvent
+            {
+                UserId = user.Id,
+                Email = user.Email,
+                FullName = user.FullName,
+                Otp = otp,
+                ExpiresAt = otpExpiresAt
+            });
+
+            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            {
+                EventType = "UserEmailVerificationRequested",
+                Payload = payload,
+                Status = "Pending"
+            });
+            await _unitOfWork.SaveChangesAsync();
         }
 
         private async Task<TokenResponse> IssueTokenPairAsync(User user)
@@ -211,6 +330,18 @@ namespace StealDeal.Services.Identity.Application.Services
         private static string BuildFullName(string firstName, string lastName)
         {
             return $"{firstName.Trim()} {lastName.Trim()}".Trim();
+        }
+
+        private static string GenerateOtp()
+        {
+            return Random.Shared.Next(100000, 1000000).ToString();
+        }
+
+        private static string HashOtp(string otp)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(otp);
+            var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+            return Convert.ToHexString(hash);
         }
     }
 }
