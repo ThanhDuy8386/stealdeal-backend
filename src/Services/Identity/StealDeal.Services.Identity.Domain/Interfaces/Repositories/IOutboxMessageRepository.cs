@@ -5,5 +5,7 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
     public interface IOutboxMessageRepository
     {
         Task AddAsync(OutboxMessage entity);
+        Task<List<OutboxMessage>> GetPendingBatchAsync(int batchSize);
+        void Update(OutboxMessage entity);
     }
 }

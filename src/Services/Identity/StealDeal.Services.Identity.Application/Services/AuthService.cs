@@ -158,7 +158,10 @@ namespace StealDeal.Services.Identity.Application.Services
 
             await _outboxMessageRepository.AddAsync(new OutboxMessage
             {
-                EventType = "UserEmailVerificationRequested",
+                ExchangeName = "stealdeal.events",
+                ExchangeType = "topic",
+                RoutingKey = "user.emailverification.requested",
+                EventType = "SendEmailVerificationOtpEvent",
                 Payload = payload,
                 Status = "Pending"
             });
@@ -241,7 +244,10 @@ namespace StealDeal.Services.Identity.Application.Services
 
             await _outboxMessageRepository.AddAsync(new OutboxMessage
             {
-                EventType = "UserEmailVerificationRequested",
+                ExchangeName = "stealdeal.events",
+                ExchangeType = "topic",
+                RoutingKey = "user.emailverification.requested",
+                EventType = "SendEmailVerificationOtpEvent",
                 Payload = payload,
                 Status = "Pending"
             });

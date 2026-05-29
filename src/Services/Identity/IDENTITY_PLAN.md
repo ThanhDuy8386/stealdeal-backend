@@ -138,3 +138,53 @@ How to use:
 - [ ] Add controller endpoints if not already present.
 - [x] Add Swagger UI with Bearer auth support for local API testing.
 - [x] Remove Swagger UI setup and return to Postman-based API testing.
+
+## 2026-05-29 - Current Auth Status
+
+### Existing API endpoints
+- `POST /api/auth/register`: creates a user, creates email OTP data, creates an outbox message, creates refresh token, returns access/refresh token.
+- `POST /api/auth/login`: verifies email/password, creates refresh token, returns access/refresh token.
+- `POST /api/auth/refresh`: rotates refresh token and returns a new access/refresh token pair.
+- `POST /api/auth/verify-email`: verifies OTP, consumes OTP, marks user email as verified.
+- `POST /api/auth/resend-otp`: revokes current active OTP, creates a new OTP, creates a new outbox message.
+- `GET /api/auth/me`: protected endpoint used to test JWT authentication.
+
+### Completed
+- [x] Register works.
+- [x] Login works.
+- [x] Refresh token works.
+- [x] Resend OTP works.
+- [x] Verify OTP works.
+- [x] Outbox message is created when OTP email should be sent.
+- [x] Refresh token is stored as hash.
+- [x] OTP is stored as hash in `EmailVerifications`.
+- [x] Raw OTP is stored in outbox payload so Notification service can send it by email.
+
+### Important notes
+- Identity service owns user, token, OTP, and outbox database updates.
+- Notification service should only send email. It should not update Identity database.
+- User verifies email by calling Identity service with the OTP.
+- Old JWT access tokens remain valid until they expire. This is normal.
+- Old refresh tokens should become unusable after refresh token rotation.
+- Raw OTP in outbox is acceptable for development, but later we should protect it better.
+
+### Outbox and RabbitMQ direction
+- `OutboxMessage` should contain publish metadata:
+  - `ExchangeName`
+  - `ExchangeType`
+  - `RoutingKey`
+  - `EventType`
+  - `Payload`
+- `IMessagePublisher.PublishAsync` should accept `IntegrationMessage`.
+- `RabbitMqMessagePublisher` should reuse one RabbitMQ connection.
+- `RabbitMqMessagePublisher` should create a channel when publishing.
+- Prefer `topic` exchange for integration events.
+- Recommended exchange: `stealdeal.events`.
+- Recommended routing key example: `identity.user.email-verification.requested`.
+
+### Next work
+- [ ] Finish flexible `RabbitMqMessagePublisher`.
+- [ ] Implement background job to scan pending outbox messages.
+- [ ] Publish pending outbox messages to RabbitMQ.
+- [ ] Mark message as processed or failed.
+- [ ] Build Notification service to consume the queue and send OTP email.
