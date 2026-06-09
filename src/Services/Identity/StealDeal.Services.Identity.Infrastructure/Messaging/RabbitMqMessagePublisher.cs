@@ -7,7 +7,7 @@ using StealDeal.Services.Identity.Infrastructure.Configuration;
 
 namespace StealDeal.Services.Identity.Infrastructure.Messaging
 {
-    public class RabbitMqMessagePublisher : IMessagePublisher
+    public class RabbitMqMessagePublisher : IMessagePublisher, IAsyncDisposable
     {
         private readonly RabbitMqSettings _settings;
         private readonly ConnectionFactory _factory;
@@ -29,11 +29,51 @@ namespace StealDeal.Services.Identity.Infrastructure.Messaging
         }
         public async Task PublishAsync(IntegrationMessage message, CancellationToken cancellationToken = default)
         {
+            ValidateMessage(message);
+
             var connection = await GetOrCreateConnectionAsync(cancellationToken);
 
             await using var channel = await connection.CreateChannelAsync(
                 cancellationToken: cancellationToken);
 
+            await DeclareExchangeAsync(channel, message, cancellationToken);
+            await PublishOnChannelAsync(channel, message, cancellationToken);
+        }
+
+        public async Task PublishBatchAsync(IReadOnlyCollection<IntegrationMessage> messages, CancellationToken cancellationToken = default)
+        {
+            if (messages.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var message in messages)
+            {
+                ValidateMessage(message);
+            }
+
+            var connection = await GetOrCreateConnectionAsync(cancellationToken);
+
+            await using var channel = await connection.CreateChannelAsync(
+                cancellationToken: cancellationToken);
+
+            var declaredExchanges = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var message in messages)
+            {
+                var exchangeKey = $"{message.ExchangeName}:{message.ExchangeType}";
+
+                if (declaredExchanges.Add(exchangeKey))
+                {
+                    await DeclareExchangeAsync(channel, message, cancellationToken);
+                }
+
+                await PublishOnChannelAsync(channel, message, cancellationToken);
+            }
+        }
+
+        private static async Task DeclareExchangeAsync(IChannel channel, IntegrationMessage message, CancellationToken cancellationToken)
+        {
             await channel.ExchangeDeclareAsync(
                 exchange: message.ExchangeName,
                 type: message.ExchangeType,
@@ -41,16 +81,12 @@ namespace StealDeal.Services.Identity.Infrastructure.Messaging
                 autoDelete: false,
                 arguments: null,
                 cancellationToken: cancellationToken);
+        }
 
+        private static async Task PublishOnChannelAsync(IChannel channel, IntegrationMessage message, CancellationToken cancellationToken)
+        {
             var body = Encoding.UTF8.GetBytes(message.Payload);
-
-            var properties = new BasicProperties
-            {
-                Persistent = true,
-                Type = message.EventType,
-                ContentType = "application/json",
-                MessageId = Guid.NewGuid().ToString()
-            };
+            var properties = CreateBasicProperties(message);
 
             await channel.BasicPublishAsync(
                 exchange: message.ExchangeName,
@@ -59,6 +95,19 @@ namespace StealDeal.Services.Identity.Infrastructure.Messaging
                 basicProperties: properties,
                 body: body,
                 cancellationToken: cancellationToken);
+        }
+
+        private static BasicProperties CreateBasicProperties(IntegrationMessage message)
+        {
+            return new BasicProperties
+            {
+                Persistent = true,
+                Type = message.EventType,
+                ContentType = "application/json",
+                MessageId = message.MessageId.ToString(),
+                Timestamp = new AmqpTimestamp(
+                    new DateTimeOffset(message.OccurredAt).ToUnixTimeSeconds())
+            };
         }
 
         private async Task<IConnection> GetOrCreateConnectionAsync(CancellationToken cancellationToken)
@@ -99,6 +148,39 @@ namespace StealDeal.Services.Identity.Infrastructure.Messaging
             }
 
             _connectionLock.Dispose();
+        }
+
+        private static void ValidateMessage(IntegrationMessage message)
+        {
+            if (message.MessageId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Message id is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message.ExchangeName))
+            {
+                throw new InvalidOperationException("Exchange name is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message.ExchangeType))
+            {
+                throw new InvalidOperationException("Exchange type is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message.RoutingKey))
+            {
+                throw new InvalidOperationException("Routing key is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message.EventType))
+            {
+                throw new InvalidOperationException("Event type is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message.Payload))
+            {
+                throw new InvalidOperationException("Payload is required.");
+            }
         }
     }
 }

@@ -183,8 +183,34 @@ How to use:
 - Recommended routing key example: `identity.user.email-verification.requested`.
 
 ### Next work
-- [ ] Finish flexible `RabbitMqMessagePublisher`.
-- [ ] Implement background job to scan pending outbox messages.
-- [ ] Publish pending outbox messages to RabbitMQ.
-- [ ] Mark message as processed or failed.
+- [x] Finish flexible `RabbitMqMessagePublisher`.
+- [x] Implement background job to scan pending outbox messages.
+- [x] Publish pending outbox messages to RabbitMQ.
+- [x] Mark message as processed or failed.
 - [ ] Build Notification service to consume the queue and send OTP email.
+
+## 2026-06-09 - Outbox Background Service
+
+### Completed
+- [x] Added `OutboxMessageProcessor` background service.
+- [x] Background service scans pending `OutboxMessages` by batch.
+- [x] Each outbox message is mapped to `IntegrationMessage`.
+- [x] Messages are published to RabbitMQ through `IMessagePublisher`.
+- [x] Successful messages are marked `Processed`.
+- [x] Failed messages increase `RetryCount`; messages become `Failed` after max retry count.
+- [x] Added `OutboxSettings` for batch size, polling interval, and max retry count.
+
+### RabbitMQ behavior
+- Reuses one RabbitMQ connection.
+- Uses a channel per single publish or a channel per batch publish.
+- Uses topic exchange routing, for example:
+  - Exchange: `stealdeal.events`
+  - Routing key: `identity.user.email-verification.requested`
+- Uses `OutboxMessage.Id` as `IntegrationMessage.MessageId` for future consumer idempotency.
+
+### Next work
+- [ ] Build Notification service.
+- [ ] Create email queue and binding.
+- [ ] Consume OTP messages.
+- [ ] Add `ProcessedMessages` table for consumer idempotency.
+- [ ] Send OTP email to user.

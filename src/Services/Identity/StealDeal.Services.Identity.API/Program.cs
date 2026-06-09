@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using StealDeal.Services.Identity.Application.Services;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
+using StealDeal.Services.Identity.Infrastructure.BackgroundServices;
 using StealDeal.Services.Identity.Infrastructure.Configuration;
 using StealDeal.Services.Identity.Infrastructure.Messaging;
 using StealDeal.Services.Identity.Infrastructure.Persistence;
@@ -19,6 +20,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("IdentityDb")));
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
+builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 
 // Dependency Injection for Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -30,7 +32,9 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
+builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 builder.Services.AddControllers();
 

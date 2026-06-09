@@ -160,7 +160,7 @@ namespace StealDeal.Services.Identity.Application.Services
             {
                 ExchangeName = "stealdeal.events",
                 ExchangeType = "topic",
-                RoutingKey = "user.emailverification.requested",
+                RoutingKey = "identity.user.email-verification.requested",
                 EventType = "SendEmailVerificationOtpEvent",
                 Payload = payload,
                 Status = "Pending"
@@ -225,12 +225,22 @@ namespace StealDeal.Services.Identity.Application.Services
             var otp = GenerateOtp();
             var otpHash = HashOtp(otp);
             var otpExpiresAt = DateTime.UtcNow.AddMinutes(10);
+            // var emailVerification = new EmailVerification
+            // {
+            //     UserId = user.Id,
+            //     OtpHash = otpHash,
+            //     ExpiresAt = otpExpiresAt,
+            //     AttemptCount = 0,
+            // };
             var emailVerification = new EmailVerification
             {
                 UserId = user.Id,
                 OtpHash = otpHash,
                 ExpiresAt = otpExpiresAt,
+                ConsumedAt = null,
+                RevokedAt = null,
                 AttemptCount = 0,
+                ResendCount = 0
             };
             await _emailVerificationRepository.AddAsync(emailVerification);
             var payload = JsonSerializer.Serialize(new SendEmailVerificationOtpEvent
@@ -246,7 +256,7 @@ namespace StealDeal.Services.Identity.Application.Services
             {
                 ExchangeName = "stealdeal.events",
                 ExchangeType = "topic",
-                RoutingKey = "user.emailverification.requested",
+                RoutingKey = "identity.user.email-verification.requested",
                 EventType = "SendEmailVerificationOtpEvent",
                 Payload = payload,
                 Status = "Pending"
