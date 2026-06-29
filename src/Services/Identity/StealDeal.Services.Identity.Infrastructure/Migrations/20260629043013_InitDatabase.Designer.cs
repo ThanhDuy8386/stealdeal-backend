@@ -12,8 +12,8 @@ using StealDeal.Services.Identity.Infrastructure.Persistence;
 namespace StealDeal.Services.Identity.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260526024636_ModifyTokenOutbox")]
-    partial class ModifyTokenOutbox
+    [Migration("20260629043013_InitDatabase")]
+    partial class InitDatabase
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,28 +25,49 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OauthProvider", b =>
+            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.EmailVerification", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
-                    b.Property<Guid>("Provider_UID")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("ResendCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExpiresAt");
+
                     b.HasIndex("UserId");
 
-                    b.ToTable("OauthProviders");
+                    b.ToTable("EmailVerifications");
                 });
 
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OutboxMessage", b =>
@@ -66,6 +87,14 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("ExchangeName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ExchangeType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Payload")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -75,6 +104,10 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
 
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("RoutingKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -240,12 +273,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<decimal>("Latitude")
-                        .HasColumnType("decimal(18, 6)");
-
-                    b.Property<decimal>("Longtitude")
-                        .HasColumnType("decimal(18, 6)");
-
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
@@ -315,10 +342,10 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.ToTable("UserTrustScores");
                 });
 
-            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OauthProvider", b =>
+            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.EmailVerification", b =>
                 {
                     b.HasOne("StealDeal.Services.Identity.Domain.Models.User", "User")
-                        .WithMany("OauthProviders")
+                        .WithMany("EmailVerifications")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -383,7 +410,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
 
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.User", b =>
                 {
-                    b.Navigation("OauthProviders");
+                    b.Navigation("EmailVerifications");
 
                     b.Navigation("RefreshTokens");
 

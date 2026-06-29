@@ -67,30 +67,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.ToTable("EmailVerifications");
                 });
 
-            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OauthProvider", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<Guid>("Provider_UID")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("OauthProviders");
-                });
-
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -294,12 +270,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<decimal>("Latitude")
-                        .HasColumnType("decimal(18, 6)");
-
-                    b.Property<decimal>("Longtitude")
-                        .HasColumnType("decimal(18, 6)");
-
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
@@ -380,17 +350,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.OauthProvider", b =>
-                {
-                    b.HasOne("StealDeal.Services.Identity.Domain.Models.User", "User")
-                        .WithMany("OauthProviders")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.RefreshToken", b =>
                 {
                     b.HasOne("StealDeal.Services.Identity.Domain.Models.User", "User")
@@ -449,8 +408,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.User", b =>
                 {
                     b.Navigation("EmailVerifications");
-
-                    b.Navigation("OauthProviders");
 
                     b.Navigation("RefreshTokens");
 

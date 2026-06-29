@@ -17,7 +17,6 @@ namespace StealDeal.Services.Identity.Domain.Models
         public bool IsDeleted { get;  set; }
         public DateTime CreatedAt { get;  set; } = DateTime.UtcNow;
 
-        public ICollection<OauthProvider> OauthProviders { get;  set; } = new List<OauthProvider>();
         public ICollection<RefreshToken> RefreshTokens { get;  set; } = new List<RefreshToken>();
         public ICollection<UserAddress> UserAddresses { get;  set; } = new List<UserAddress>();
         public UserTrustScore? UserTrustScore { get;  set; }

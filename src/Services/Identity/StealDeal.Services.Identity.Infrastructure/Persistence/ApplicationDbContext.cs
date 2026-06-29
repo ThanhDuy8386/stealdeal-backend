@@ -15,7 +15,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         public DbSet<UserTrustScore> UserTrustScores { get; set; }
         public DbSet<TrustScoreEvent> TrustScoreEvents { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
-        public DbSet<OauthProvider> OauthProviders { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
 
@@ -56,8 +55,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.Property(e => e.Address).IsRequired().HasMaxLength(500);
                 entity.Property(e => e.District).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.City).IsRequired().HasMaxLength(100);
-                entity.Property(e => e.Longtitude).HasColumnType("decimal(18, 6)");
-                entity.Property(e => e.Latitude).HasColumnType("decimal(18, 6)");
 
                 entity.HasOne(e => e.User)
                       .WithMany(u => u.UserAddresses)
@@ -99,18 +96,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
 
                 entity.HasOne(e => e.User)
                       .WithMany(u => u.RefreshTokens)
-                      .HasForeignKey(e => e.UserId)
-                      .OnDelete(DeleteBehavior.Cascade);
-            });
-
-            // OauthProviders Configuration
-            modelBuilder.Entity<OauthProvider>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Provider).IsRequired().HasMaxLength(50);
-
-                entity.HasOne(e => e.User)
-                      .WithMany(u => u.OauthProviders)
                       .HasForeignKey(e => e.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
             });

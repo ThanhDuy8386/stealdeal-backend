@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace StealDeal.Services.Identity.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitDatabase : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -18,6 +18,11 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     EventType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Payload = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    RetryCount = table.Column<int>(type: "int", nullable: false),
+                    ExchangeName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ExchangeType = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    RoutingKey = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ProcessedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     Error = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
@@ -37,7 +42,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     Phone = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
                     FullName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     AvatarUrl = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    IsEmailVerify = table.Column<bool>(type: "bit", nullable: false),
+                    IsEmailVerified = table.Column<bool>(type: "bit", nullable: false),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
                     IsDeleted = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
@@ -48,19 +53,24 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "OauthProviders",
+                name: "EmailVerifications",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Provider = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    Provider_UID = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    OtpHash = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ConsumedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    RevokedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    AttemptCount = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
+                    ResendCount = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_OauthProviders", x => x.Id);
+                    table.PrimaryKey("PK_EmailVerifications", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_OauthProviders_Users_UserId",
+                        name: "FK_EmailVerifications_Users_UserId",
                         column: x => x.UserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -76,6 +86,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     TokenHash = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     IsRevoked = table.Column<bool>(type: "bit", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
@@ -124,8 +135,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     Address = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     District = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     City = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Longitude = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
-                    Latitude = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     IsDefault = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
@@ -185,8 +194,13 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_OauthProviders_UserId",
-                table: "OauthProviders",
+                name: "IX_EmailVerifications_ExpiresAt",
+                table: "EmailVerifications",
+                column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_EmailVerifications_UserId",
+                table: "EmailVerifications",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
@@ -226,7 +240,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "OauthProviders");
+                name: "EmailVerifications");
 
             migrationBuilder.DropTable(
                 name: "OutboxMessages");
