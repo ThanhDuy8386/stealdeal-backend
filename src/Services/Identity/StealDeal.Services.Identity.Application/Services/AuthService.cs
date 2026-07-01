@@ -2,6 +2,7 @@ using System.Text.Json;
 using StealDeal.Services.Identity.Application.DTOs.Events;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
+using StealDeal.Services.Identity.Application.Exceptions;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
 using StealDeal.Services.Identity.Domain.Models;
@@ -43,13 +44,13 @@ namespace StealDeal.Services.Identity.Application.Services
 
             if (user is null || user.IsDeleted || !user.IsActive)
             {
-                throw new UnauthorizedAccessException("Invalid credentials.");
+                throw new UnauthorizedException("Invalid credentials.");
             }
 
             var isPasswordValid = _passwordHasher.Verify(user.PasswordHash, request.Password);
             if (!isPasswordValid)
             {
-                throw new UnauthorizedAccessException("Invalid credentials.");
+                throw new UnauthorizedException("Invalid credentials.");
             }
 
             var response = await IssueTokenPairAsync(user);
@@ -62,7 +63,7 @@ namespace StealDeal.Services.Identity.Application.Services
         {
             if (string.IsNullOrWhiteSpace(refreshToken.RefreshToken))
             {
-                throw new UnauthorizedAccessException("Invalid refresh token.");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             var refreshTokenHash = _jwtTokenGenerator.HashRefreshToken(refreshToken.RefreshToken);
@@ -70,12 +71,12 @@ namespace StealDeal.Services.Identity.Application.Services
 
             if (storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)
             {
-                throw new UnauthorizedAccessException("Invalid refresh token.");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             if (storedToken.User is null || storedToken.User.IsDeleted || !storedToken.User.IsActive)
             {
-                throw new UnauthorizedAccessException("Invalid refresh token.");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             storedToken.IsRevoked = true;
@@ -99,7 +100,7 @@ namespace StealDeal.Services.Identity.Application.Services
             var isEmailUnique = await _userRepository.IsEmailUniqueAsync(normalizedEmail);
             if (!isEmailUnique)
             {
-                throw new InvalidOperationException("Email already exists.");
+                throw new ConflictException("Email already exists.");
             }
 
             var user = new User
@@ -178,12 +179,12 @@ namespace StealDeal.Services.Identity.Application.Services
         {
             if (string.IsNullOrWhiteSpace(request.Email))
             {
-                throw new InvalidOperationException("Email is required.");
+                throw new BadRequestException("Email is required.");
             }
 
             if (string.IsNullOrWhiteSpace(request.Otp))
             {
-                throw new InvalidOperationException("OTP is required.");
+                throw new BadRequestException("OTP is required.");
             }
 
             var normalizedEmail = NormalizeEmail(request.Email);
@@ -192,7 +193,7 @@ namespace StealDeal.Services.Identity.Application.Services
                 .VerifyOtp(normalizedEmail, otpHash);
             if (verification is null)
             {
-                throw new InvalidOperationException("Invalid or expired OTP.");
+                throw new BadRequestException("Invalid or expired OTP.");
             }
             verification.ConsumedAt = DateTime.UtcNow;
             verification.User.IsEmailVerified = true;
@@ -204,17 +205,17 @@ namespace StealDeal.Services.Identity.Application.Services
         {
             if (string.IsNullOrWhiteSpace(request.Email))
             {
-                throw new InvalidOperationException("Email is required.");
+                throw new BadRequestException("Email is required.");
             }
             var normalizedEmail = NormalizeEmail(request.Email);
             var user = await _userRepository.GetByEmailAsync(normalizedEmail);
             if (user is null)
             {
-                throw new InvalidOperationException("User not found.");
+                throw new BadRequestException("User not found.");
             }
             if (user.IsEmailVerified)
             {
-                throw new InvalidOperationException("Email is already verified.");
+                throw new ConflictException("Email is already verified.");
             }
             var activeVerification = await _emailVerificationRepository.GetActiveOtpByUserIdAsync(user.Id);
             if (activeVerification != null)
@@ -296,22 +297,22 @@ namespace StealDeal.Services.Identity.Application.Services
         {
             if (string.IsNullOrWhiteSpace(request.Email))
             {
-                throw new InvalidOperationException("Email is required.");
+                throw new BadRequestException("Email is required.");
             }
 
             if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
             {
-                throw new InvalidOperationException("Password must be at least 8 characters.");
+                throw new BadRequestException("Password must be at least 8 characters.");
             }
 
             if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
             {
-                throw new InvalidOperationException("First name and last name are required.");
+                throw new BadRequestException("First name and last name are required.");
             }
 
             if (string.IsNullOrWhiteSpace(request.Role))
             {
-                throw new InvalidOperationException("Role is required.");
+                throw new BadRequestException("Role is required.");
             }
         }
 
@@ -319,7 +320,7 @@ namespace StealDeal.Services.Identity.Application.Services
         {
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             {
-                throw new UnauthorizedAccessException("Invalid credentials.");
+                throw new UnauthorizedException("Invalid credentials.");
             }
         }
 
@@ -340,7 +341,7 @@ namespace StealDeal.Services.Identity.Application.Services
                 return "Seller";
             }
 
-            throw new InvalidOperationException("Role must be Customer or Seller.");
+            throw new BadRequestException("Role must be Customer or Seller.");
         }
 
         private static string BuildFullName(string firstName, string lastName)

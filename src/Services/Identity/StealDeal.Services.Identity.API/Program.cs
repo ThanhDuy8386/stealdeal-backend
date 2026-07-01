@@ -1,7 +1,7 @@
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using StealDeal.Services.Identity.API.Middlewares;
 using StealDeal.Services.Identity.Application.Services;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
@@ -11,6 +11,7 @@ using StealDeal.Services.Identity.Infrastructure.Messaging;
 using StealDeal.Services.Identity.Infrastructure.Persistence;
 using StealDeal.Services.Identity.Infrastructure.Repositories;
 using StealDeal.Services.Identity.Infrastructure.Security;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,7 +35,7 @@ builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
-builder.Services.AddHostedService<OutboxMessageProcessor>();
+//builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 builder.Services.AddControllers();
 
@@ -59,6 +60,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseAuthentication();

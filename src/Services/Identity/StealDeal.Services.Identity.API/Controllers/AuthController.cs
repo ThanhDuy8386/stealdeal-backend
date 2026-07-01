@@ -18,71 +18,36 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                var result = await _authService.RegisterAsync(request, cancellationToken);
-                return Ok(result);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            var result = await _authService.RegisterAsync(request, cancellationToken);
+            return Ok(result);
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                var result = await _authService.LoginAsync(request, cancellationToken);
-                return Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
-            }
+            var result = await _authService.LoginAsync(request, cancellationToken);
+            return Ok(result);
         }
 
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh(RefreshTokenRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                var result = await _authService.RefreshAsync(request, cancellationToken);
-                return Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
-            }
+            var result = await _authService.RefreshAsync(request, cancellationToken);
+            return Ok(result);
         }
 
         [HttpPost("verify-email")]
         public async Task<IActionResult> VerifyEmail(VerifyEmailOtpRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                await _authService.VerifyEmailOtpAsync(request, cancellationToken);
-                return Ok(new { message = "Email verified successfully." });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
-            }
+            await _authService.VerifyEmailOtpAsync(request, cancellationToken);
+            return Ok(new { message = "Email verified successfully." });
         }
 
         [HttpPost("resend-otp")]
         public async Task<IActionResult> ResendOtp(ResendOtpRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                await _authService.ResendOtpAsync(request, cancellationToken);
-                return Ok(new { message = "OTP resent successfully." });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
-            }
+            await _authService.ResendOtpAsync(request, cancellationToken);
+            return Ok(new { message = "OTP resent successfully." });
         }
 
         [Authorize]
