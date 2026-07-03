@@ -19,12 +19,11 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             await _context.Users.AddAsync(entity);
         }
 
-        public Task DeleteAsync(User entity)
+        public void Delete(User entity)
         {
             entity.IsDeleted = true;
             entity.IsActive = false;
             _context.Users.Update(entity);
-            return Task.CompletedTask;
         }
 
         public async Task<IEnumerable<User>> GetAllAsync()
@@ -51,7 +50,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             return user == null;
         }
 
-        public async Task UpdateAsync(User entity)
+        public void Update(User entity)
         {
             _context.Users.Update(entity);
         }
