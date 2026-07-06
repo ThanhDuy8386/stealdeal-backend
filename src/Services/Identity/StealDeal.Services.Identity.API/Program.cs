@@ -35,7 +35,7 @@ builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
-//builder.Services.AddHostedService<OutboxMessageProcessor>();
+builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 builder.Services.AddControllers();
 
