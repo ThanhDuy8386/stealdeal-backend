@@ -11,8 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StealDeal.Services.Notification.Application\StealDeal.Services.Notification.Application.csproj" />
-    <ProjectReference Include="..\StealDeal.Services.Notification.Infrastructure\StealDeal.Services.Notification.Infrastructure.csproj" />
+    <ProjectReference Include="..\StealDeal.Services.Order.Application\StealDeal.Services.Order.Application.csproj" />
+    <ProjectReference Include="..\StealDeal.Services.Order.Infrastructure\StealDeal.Services.Order.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

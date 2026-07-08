@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\StealDeal.Services.Notification.Application\StealDeal.Services.Notification.Application.csproj" />
+    <ProjectReference Include="..\StealDeal.Services.Notification.Domain\StealDeal.Services.Notification.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

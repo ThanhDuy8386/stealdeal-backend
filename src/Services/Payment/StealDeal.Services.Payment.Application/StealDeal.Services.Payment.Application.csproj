@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StealDeal.Services.Notification.Domain\StealDeal.Services.Notification.Domain.csproj" />
+    <ProjectReference Include="..\StealDeal.Services.Payment.Domain\StealDeal.Services.Payment.Domain.csproj" />
   </ItemGroup>
 
 </Project>
