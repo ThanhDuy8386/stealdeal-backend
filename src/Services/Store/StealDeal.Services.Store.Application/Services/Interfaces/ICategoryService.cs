@@ -12,6 +12,6 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
         Task<CategoryResponse> UpdateAsync(Guid id, UpdateCategoryRequest request);
         Task DeleteAsync(Guid id);
         Task<CategoryResponse> GetBySlugAsync(string slug);
-        Task<List<CategoryResponse>> GetAllActiveAsync();
+        Task<List<CategoryResponse>> GetAllAsync();
     }
 }

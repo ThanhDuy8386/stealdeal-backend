@@ -1,13 +1,14 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using StealDeal.Services.Identity.Application.Exceptions;
-using System;
+using Microsoft.AspNetCore.Mvc;
+using StealDeal.Services.Store.Application.Exceptions;
 using System.Text.Json;
-namespace StealDeal.Services.Identity.API.Middlewares
+
+namespace StealDeal.Services.Store.API.Middlewares
 {
     public class GlobalExceptionHandlerMiddleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<GlobalExceptionHandlerMiddleware> _logger;
+
         public GlobalExceptionHandlerMiddleware(RequestDelegate next, ILogger<GlobalExceptionHandlerMiddleware> logger)
         {
             _next = next;
@@ -18,51 +19,43 @@ namespace StealDeal.Services.Identity.API.Middlewares
         {
             try
             {
-                await _next(context);  // Gọi tiếp pipeline
+                await _next(context);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Đã xảy ra lỗi hệ thống: {Message}", ex.Message);
                 await HandleExceptionAsync(context, ex);
             }
         }
 
         private async Task HandleExceptionAsync(HttpContext context, Exception ex)
         {
-            // Map exception type → HTTP status code
-            var (statusCode, message) = ex switch
+            var (statusCode, title) = ex switch
             {
-                BadRequestException => (400, ex.Message),
-                UnauthorizedException => (401, ex.Message),
-                NotFoundException => (404, ex.Message),
-                ConflictException => (409, ex.Message),
-                _ => (500, "An unexpected error occurred.")
+                BadRequestException  => (400, "Bad Request"),
+                UnauthorizedException => (401, "Unauthorized"),
+                ForbiddenException   => (403, "Forbidden"),
+                NotFoundException    => (404, "Not Found"),
+                ConflictException    => (409, "Conflict"),
+                _                    => (500, "Internal Server Error")
             };
-            // Log: chỉ log chi tiết cho 500 (unexpected), còn lại log warning
+
             if (statusCode == 500)
-                _logger.LogError(ex, "Unhandled exception");
+                _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
             else
-                _logger.LogWarning("Business exception: {Message}", ex.Message);
+                _logger.LogWarning("Business exception [{Status}]: {Message}", statusCode, ex.Message);
+
             context.Response.StatusCode = statusCode;
             context.Response.ContentType = "application/json";
 
             var problemDetails = new ProblemDetails
             {
                 Status = statusCode,
-                Title = GetTitle(statusCode),
-                Detail = statusCode == 500 ? "Lỗi máy chủ nội bộ. Vui lòng thử lại sau." : ex.Message,
+                Title = title,
+                Detail = statusCode == 500 ? "An unexpected error occurred. Please try again later." : ex.Message,
                 Instance = context.Request.Path
             };
-            var jsonResponse = JsonSerializer.Serialize(problemDetails);
-            await context.Response.WriteAsync(jsonResponse);
-        }
 
-        private static string GetTitle(int statusCode) => statusCode switch
-        {
-            StatusCodes.Status400BadRequest => "Lỗi dữ liệu đầu vào.",
-            StatusCodes.Status401Unauthorized => "Không có quyền truy cập.",
-            StatusCodes.Status404NotFound => "Không tìm thấy dữ liệu.",
-            _ => "Lỗi hệ thống."
-        };
+            await context.Response.WriteAsJsonAsync(problemDetails);
+        }
     }
 }

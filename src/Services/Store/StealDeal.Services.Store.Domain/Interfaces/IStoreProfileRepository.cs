@@ -1,7 +1,4 @@
-﻿using StealDeal.Services.Store.Domain.Models;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using StealDeal.Services.Store.Domain.Models;
 
 namespace StealDeal.Services.Store.Domain.Interfaces
 {
@@ -9,9 +6,9 @@ namespace StealDeal.Services.Store.Domain.Interfaces
     {
         Task AddAsync(StoreProfile entity);
         Task<StoreProfile?> GetByIdAsync(Guid id);
-        void Update(StoreProfile entity);
-        void ToggleActive(StoreProfile entity);
+        Task<StoreProfile?> GetByOwnerIdAsync(Guid ownerId);
+        Task<bool> ExistsByOwnerIdAsync(Guid ownerId);
         Task<IEnumerable<StoreProfile>> GetAllAsync();
-
+        void Update(StoreProfile entity);
     }
 }

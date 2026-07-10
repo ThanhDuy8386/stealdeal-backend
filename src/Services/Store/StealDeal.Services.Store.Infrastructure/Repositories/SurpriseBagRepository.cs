@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using StealDeal.Services.Store.Domain.Interfaces;
 using StealDeal.Services.Store.Domain.Models;
 using StealDeal.Services.Store.Infrastructure.Persistence;
@@ -23,12 +23,18 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
 
         public async Task<IEnumerable<SurpriseBag>> GetAllAsync()
         {
-            return await _context.SurpriseBags.ToListAsync();
+            return await _context.SurpriseBags
+                .Include(x => x.Store)
+                .Include(x => x.Categories)
+                .ToListAsync();
         }
 
         public async Task<SurpriseBag?> GetByIdAsync(Guid id)
         {
-            return await _context.SurpriseBags.FirstOrDefaultAsync(x => x.Id == id);
+            return await _context.SurpriseBags
+                .Include(x => x.Store)
+                .Include(x => x.Categories)
+                .FirstOrDefaultAsync(x => x.Id == id);
         }
 
         public async Task<IEnumerable<SurpriseBag>> GetByStoreIdAsync(Guid storeId)
@@ -41,6 +47,11 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
         public void Update(SurpriseBag entity)
         {
             _context.SurpriseBags.Update(entity);
+        }
+
+        public void Delete(SurpriseBag entity)
+        {
+            _context.SurpriseBags.Remove(entity);
         }
     }
 }

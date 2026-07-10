@@ -45,14 +45,15 @@ namespace StealDeal.Services.Store.Application.Services
                 throw new NotFoundException("Category not found.");
             }
             _categoryRepository.Delete(category);
+            await _unitOfWork.SaveChangesAsync();
         }
 
-        public async Task<List<CategoryResponse>> GetAllActiveAsync()
+        public async Task<List<CategoryResponse>> GetAllAsync()
         {
             var categories = await _categoryRepository.GetAllAsync();
             if (categories == null)
             {
-                throw new NotFoundException("There are not active category yet");
+                throw new NotFoundException("There are no categories yet");
             }
             return categories.Select(x => x.ToResponse()).ToList();
         }

@@ -1,4 +1,4 @@
-﻿using StealDeal.Services.Store.Domain.Models;
+using StealDeal.Services.Store.Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -10,6 +10,7 @@ namespace StealDeal.Services.Store.Domain.Interfaces
         Task AddAsync(SurpriseBag entity);
         Task<SurpriseBag?> GetByIdAsync(Guid id);
         void Update(SurpriseBag entity);
+        void Delete(SurpriseBag entity);
         Task<IEnumerable<SurpriseBag>> GetAllAsync();
         Task<IEnumerable<SurpriseBag>> GetByStoreIdAsync(Guid storeId);
     }

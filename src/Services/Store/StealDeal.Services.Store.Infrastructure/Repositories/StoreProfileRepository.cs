@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using StealDeal.Services.Store.Domain.Interfaces;
 using StealDeal.Services.Store.Domain.Models;
 using StealDeal.Services.Store.Infrastructure.Persistence;
@@ -21,10 +21,16 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
             await _context.StoreProfiles.AddAsync(entity);
         }
 
-        public void ToggleActive(StoreProfile entity)
+        public async Task<StoreProfile?> GetByOwnerIdAsync(Guid ownerId)
         {
-            entity.IsActive = !entity.IsActive;
-            _context.StoreProfiles.Update(entity);
+            return await _context.StoreProfiles
+                .FirstOrDefaultAsync(x => x.OwnerId == ownerId);
+        }
+
+        public async Task<bool> ExistsByOwnerIdAsync(Guid ownerId)
+        {
+            return await _context.StoreProfiles
+                .AnyAsync(x => x.OwnerId == ownerId);
         }
 
         public async Task<IEnumerable<StoreProfile>> GetAllAsync()
