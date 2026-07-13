@@ -1,14 +1,31 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\StealDeal.Services.Order.Application\StealDeal.Services.Order.Application.csproj" />
-    <ProjectReference Include="..\StealDeal.Services.Order.Domain\StealDeal.Services.Order.Domain.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\StealDeal.Services.Order.Application\StealDeal.Services.Order.Application.csproj" />
+		<ProjectReference Include="..\StealDeal.Services.Order.Domain\StealDeal.Services.Order.Domain.csproj" />
+	</ItemGroup>
 
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.8" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.8">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.8" />
+		<PackageReference Include="RabbitMQ.Client" Version="7.2.1" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.18.0" />
+	</ItemGroup>
 </Project>
