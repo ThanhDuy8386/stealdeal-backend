@@ -31,6 +31,46 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             return await _context.Users.ToListAsync();
         }
 
+        public async Task<(IEnumerable<User>, int totalCount)> GetUsersAsync(string? searchTerm, string? role, bool? isActive, int page, int pageSize)
+        {
+            var query = _context.Users.AsQueryable();
+
+            // filter deleted users
+            query = query.Where(u => !u.IsDeleted);
+
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.ToLower();
+                query = query.Where(u => u.Email.ToLower().Contains(term) || u.FullName.ToLower().Contains(term));
+            }
+
+
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                query = query.Where(u => u.UserRoles.Any(r => r.Role == role));
+            }
+
+            if (isActive.HasValue)
+            {
+                query = query.Where(u => u.IsActive == isActive.Value);
+            }
+
+            // count all users after filtering for pagination
+            var totalCount = await query.CountAsync();
+
+
+            var users = await query
+                .OrderByDescending(u => u.CreatedAt) // newest 
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Include(u => u.UserRoles) // load the roles too
+                .ToListAsync();
+
+            return (users, totalCount);
+
+        }
+
         public async Task<User?> GetByEmailAsync(string email)
         {
             return await _context.Users

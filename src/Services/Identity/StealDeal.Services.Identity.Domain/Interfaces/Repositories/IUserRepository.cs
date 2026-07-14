@@ -6,6 +6,7 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
     {
         Task<User?> GetByIdAsync(Guid id);
         Task<IEnumerable<User>> GetAllAsync();
+        Task<(IEnumerable<User>, int totalCount)> GetUsersAsync(string? searchTerm, string? role, bool? isActive, int page, int pageSize);
         Task AddAsync(User entity);
         void Update(User entity);
         void Delete(User entity);
