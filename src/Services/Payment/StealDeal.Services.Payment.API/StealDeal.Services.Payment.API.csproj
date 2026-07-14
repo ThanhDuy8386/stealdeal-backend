@@ -15,4 +15,9 @@
     <ProjectReference Include="..\StealDeal.Services.Payment.Infrastructure\StealDeal.Services.Payment.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Controllers\" />
+    <Folder Include="Middlewares\" />
+  </ItemGroup>
+
 </Project>
