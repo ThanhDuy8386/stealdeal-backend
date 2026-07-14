@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
+using AccessTokenResponse = StealDeal.Services.Identity.Application.DTOs.Responses.AccessTokenResponse;
+using StealDeal.Services.Identity.Application.DTOs.Responses;
 
 namespace Identity.StealDeal.Services.Identity.API.Controllers
 {
@@ -10,6 +12,7 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private const string RefreshTokenCookieName = "refresh_token";
         public AuthController(IAuthService authService)
         {
             _authService = authService;
@@ -18,22 +21,54 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
         {
-            var result = await _authService.RegisterAsync(request, cancellationToken);
-            return Ok(result);
+            var tokenResponse = await _authService.RegisterAsync(request, cancellationToken);
+            SetRefreshTokenCookie(tokenResponse);
+            return Ok(new AccessTokenResponse
+            {
+                AccessToken = tokenResponse.AccessToken,
+                AccessTokenExpiresAt = tokenResponse.AccessTokenExpiresAt
+            });
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
         {
-            var result = await _authService.LoginAsync(request, cancellationToken);
-            return Ok(result);
+            var tokenResponse = await _authService.LoginAsync(request, cancellationToken);
+            SetRefreshTokenCookie(tokenResponse);
+            return Ok(new AccessTokenResponse
+            {
+                AccessToken = tokenResponse.AccessToken,
+                AccessTokenExpiresAt = tokenResponse.AccessTokenExpiresAt
+            });
         }
 
         [HttpPost("refresh")]
-        public async Task<IActionResult> Refresh(RefreshTokenRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
         {
-            var result = await _authService.RefreshAsync(request, cancellationToken);
-            return Ok(result);
+            var refreshToken = Request.Cookies[RefreshTokenCookieName];
+
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return Unauthorized(new
+                {
+                    message = "Refresh token is missing."
+                });
+            }
+
+            var tokenResponse = await _authService.RefreshAsync(
+                new RefreshTokenRequest
+                {
+                    RefreshToken = refreshToken,
+                },
+                cancellationToken);
+
+            SetRefreshTokenCookie(tokenResponse);
+
+            return Ok(new AccessTokenResponse
+            {
+                AccessToken = tokenResponse.AccessToken,
+                AccessTokenExpiresAt = tokenResponse.AccessTokenExpiresAt
+            });
         }
 
         [HttpPost("verify-email")]
@@ -61,6 +96,22 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
                 Name = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value,
                 Roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(role => role.Value).ToList()
             });
+        }
+
+        private void SetRefreshTokenCookie(TokenResponse tokenResponse)
+        {
+            Response.Cookies.Append(
+                RefreshTokenCookieName,
+                tokenResponse.RefreshToken,
+                new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Lax,
+                    Expires = tokenResponse.RefreshTokenExpiresAt,
+                    Path = "/api/auth",
+                    IsEssential = true,
+                });
         }
     }
 }
