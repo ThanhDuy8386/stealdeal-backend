@@ -10,4 +10,10 @@
     <ProjectReference Include="..\StealDeal.Services.Notification.Domain\StealDeal.Services.Notification.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="DTOs\" />
+    <Folder Include="Mappings\" />
+    <Folder Include="Services\Interfaces\" />
+  </ItemGroup>
+
 </Project>

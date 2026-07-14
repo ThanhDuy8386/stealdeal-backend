@@ -15,4 +15,8 @@
     <ProjectReference Include="..\StealDeal.Services.Notification.Infrastructure\StealDeal.Services.Notification.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Controllers\" />
+  </ItemGroup>
+
 </Project>

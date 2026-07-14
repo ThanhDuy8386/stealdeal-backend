@@ -1,0 +1,9 @@
+{
+    "dotrush.roslyn.projectOrSolutionFiles": [
+        "c:\\Users\\ADMIN\\Desktop\\Capstone-BE\\stealdeal-backend\\src\\Services\\Order\\StealDeal.Services.Order.slnx",
+        "c:\\Users\\ADMIN\\Desktop\\Capstone-BE\\stealdeal-backend\\src\\Services\\Identity\\StealDeal.Services.Identity.slnx",
+        "c:\\Users\\ADMIN\\Desktop\\Capstone-BE\\stealdeal-backend\\src\\Services\\Notification\\StealDeal.Services.Notification.slnx",
+        "c:\\Users\\ADMIN\\Desktop\\Capstone-BE\\stealdeal-backend\\src\\Services\\Payment\\StealDeal.Services.Payment.slnx",
+        "c:\\Users\\ADMIN\\Desktop\\Capstone-BE\\stealdeal-backend\\src\\Services\\Store\\StealDeal.Services.Store.slnx"
+    ]
+}
