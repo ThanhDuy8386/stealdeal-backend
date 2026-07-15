@@ -1,6 +1,7 @@
 ﻿using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
 using StealDeal.Services.Identity.Application.Exceptions;
+using StealDeal.Services.Identity.Application.Mappings;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
 using StealDeal.Services.Identity.Domain.Models;
@@ -37,18 +38,7 @@ namespace StealDeal.Services.Identity.Application.Services
 
             var (users, totalCount) = await _userRepository.GetUsersAsync(request.SearchTerm, request.Role, isActive, page, pageSize);
 
-            var userResponses = users.Select(u => new UserResponse
-            {
-                Id = u.Id,
-                Email = u.Email,
-                Phone = u.Phone,
-                FullName = u.FullName,
-                AvatarUrl = u.AvatarUrl,
-                IsEmailVerified = u.IsEmailVerified,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                Roles = u.UserRoles.Select(r => r.Role).ToList()
-            }).ToList();
+            var userResponses = users.Select(u => u.ToUserResponse()).ToList();
 
             return new PagedResult<UserResponse>
             {
@@ -67,37 +57,7 @@ namespace StealDeal.Services.Identity.Application.Services
                 throw new NotFoundException($"User with ID {id} not found.");
             }
 
-            var userDetailResponse = new UserDetailResponse
-            {
-                Id = user.Id,
-                Email = user.Email,
-                Phone = user.Phone,
-                FullName = user.FullName,
-                AvatarUrl = user.AvatarUrl,
-                IsEmailVerified = user.IsEmailVerified,
-                IsActive = user.IsActive,
-                CreatedAt = user.CreatedAt,
-                UserAddresses = user.UserAddresses.Select(a => new UserAddressResponse
-                {
-                    Id = a.Id,
-                    Label = a.Label,
-                    Address = a.Address,
-                    District = a.District,
-                    City = a.City,
-                    IsDefault = a.IsDefault
-                }).ToList(),
-                UserTrustScore = user.UserTrustScore != null ? new UserTrustScoreResponse
-                {
-                    Id = user.UserTrustScore.Id,
-                    Score = user.UserTrustScore.Score,
-                    TotalOrders = user.UserTrustScore.TotalOrders,
-                    SuccessfulPickups = user.UserTrustScore.SuccessfulPickups,
-                    NoShowCount = user.UserTrustScore.NoShowCount,
-                    DisputeCount = user.UserTrustScore.DisputeCount,
-                    LastCalculatedAt = user.UserTrustScore.LastCalculatedAt
-                } : null,
-                Roles = user.UserRoles.Select(r => r.Role).ToList()
-            };
+            var userDetailResponse = user.ToUserDetailResponse();
 
             return userDetailResponse;
         }
