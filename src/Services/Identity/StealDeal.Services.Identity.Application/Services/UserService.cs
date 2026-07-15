@@ -1,5 +1,6 @@
 ﻿using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
+using StealDeal.Services.Identity.Application.Exceptions;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
 using System;
@@ -55,6 +56,49 @@ namespace StealDeal.Services.Identity.Application.Services
                 PageSize = pageSize,
                 TotalCount = totalCount
             };
+        }
+
+        public async Task<UserDetailResponse> GetUserDetail(Guid id)
+        {
+            var user = await _userRepository.GetByIdAsync(id);
+            if (user == null)
+            {
+                throw new NotFoundException($"User with ID {id} not found.");
+            }
+
+            var userDetailResponse = new UserDetailResponse
+            {
+                Id = user.Id,
+                Email = user.Email,
+                Phone = user.Phone,
+                FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
+                IsEmailVerified = user.IsEmailVerified,
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt,
+                UserAddresses = user.UserAddresses.Select(a => new UserAddressResponse
+                {
+                    Id = a.Id,
+                    Label = a.Label,
+                    Address = a.Address,
+                    District = a.District,
+                    City = a.City,
+                    IsDefault = a.IsDefault
+                }).ToList(),
+                UserTrustScore = user.UserTrustScore != null ? new UserTrustScoreResponse
+                {
+                    Id = user.UserTrustScore.Id,
+                    Score = user.UserTrustScore.Score,
+                    TotalOrders = user.UserTrustScore.TotalOrders,
+                    SuccessfulPickups = user.UserTrustScore.SuccessfulPickups,
+                    NoShowCount = user.UserTrustScore.NoShowCount,
+                    DisputeCount = user.UserTrustScore.DisputeCount,
+                    LastCalculatedAt = user.UserTrustScore.LastCalculatedAt
+                } : null,
+                Roles = user.UserRoles.Select(r => r.Role).ToList()
+            };
+
+            return userDetailResponse;
         }
     }
 }

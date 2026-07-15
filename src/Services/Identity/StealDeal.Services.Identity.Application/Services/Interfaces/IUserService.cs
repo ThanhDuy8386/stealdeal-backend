@@ -9,5 +9,6 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
     public interface IUserService
     {
         Task<PagedResult<UserResponse>> GetUsers(GetUsersQueryRequest request);
+        Task<UserDetailResponse> GetUserDetail(Guid id);
     }
 }

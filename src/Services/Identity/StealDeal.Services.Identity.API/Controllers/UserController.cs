@@ -21,6 +21,12 @@ namespace StealDeal.Services.Identity.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetUserDetail(Guid id)
+        {
+            var result = await _userService.GetUserDetail(id);
+            return Ok(result);
+        }
 
     }
 }
