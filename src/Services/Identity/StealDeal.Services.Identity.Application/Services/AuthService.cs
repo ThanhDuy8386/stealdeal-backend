@@ -360,5 +360,27 @@ namespace StealDeal.Services.Identity.Application.Services
             var hash = System.Security.Cryptography.SHA256.HashData(bytes);
             return Convert.ToHexString(hash);
         }
+
+        public async Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default)
+        {
+            if(string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return;
+            }
+
+            var refreshTokenHash = _jwtTokenGenerator.HashRefreshToken(refreshToken);
+            var storedToken = await _refreshTokenRepository.GetByTokenHashAsync(refreshTokenHash);
+
+            if(storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)
+            {
+                return;
+            }
+
+            storedToken.IsRevoked = true;
+            storedToken.RevokedAt = DateTime.UtcNow;
+
+            _refreshTokenRepository.Update(storedToken);
+            await _unitOfWork.SaveChangesAsync();
+        }
     }
 }

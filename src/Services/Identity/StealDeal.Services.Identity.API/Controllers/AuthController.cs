@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
-using AccessTokenResponse = StealDeal.Services.Identity.Application.DTOs.Responses.AccessTokenResponse;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
 
 namespace Identity.StealDeal.Services.Identity.API.Controllers
@@ -96,6 +95,27 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
                 Name = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value,
                 Roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(role => role.Value).ToList()
             });
+        }
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+        {
+            var refreshToken = Request.Cookies[RefreshTokenCookieName];
+
+            if (!string.IsNullOrWhiteSpace(refreshToken))
+            {
+                await _authService.LogoutAsync(refreshToken, cancellationToken);
+            }
+
+            Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Lax,
+                Path = "/api/auth",
+                IsEssential = true,
+            });
+            return Ok(new { message = "Logged out successfully." });
         }
 
         private void SetRefreshTokenCookie(TokenResponse tokenResponse)

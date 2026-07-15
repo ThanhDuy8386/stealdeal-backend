@@ -10,5 +10,6 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
         Task<TokenResponse> RefreshAsync(RefreshTokenRequest refreshToken, CancellationToken cancellationToken = default);
         Task VerifyEmailOtpAsync(VerifyEmailOtpRequest request, CancellationToken cancellationToken = default);
         Task ResendOtpAsync(ResendOtpRequest request, CancellationToken cancellationToken = default);
+        Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default);
     }
 }
