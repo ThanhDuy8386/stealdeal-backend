@@ -1,7 +1,10 @@
 ﻿using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
+using StealDeal.Services.Identity.Application.Exceptions;
+using StealDeal.Services.Identity.Application.Mappings;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
+using StealDeal.Services.Identity.Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -35,18 +38,7 @@ namespace StealDeal.Services.Identity.Application.Services
 
             var (users, totalCount) = await _userRepository.GetUsersAsync(request.SearchTerm, request.Role, isActive, page, pageSize);
 
-            var userResponses = users.Select(u => new UserResponse
-            {
-                Id = u.Id,
-                Email = u.Email,
-                Phone = u.Phone,
-                FullName = u.FullName,
-                AvatarUrl = u.AvatarUrl,
-                IsEmailVerified = u.IsEmailVerified,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                Roles = u.UserRoles.Select(r => r.Role).ToList()
-            }).ToList();
+            var userResponses = users.Select(u => u.ToUserResponse()).ToList();
 
             return new PagedResult<UserResponse>
             {
@@ -55,6 +47,80 @@ namespace StealDeal.Services.Identity.Application.Services
                 PageSize = pageSize,
                 TotalCount = totalCount
             };
+        }
+
+        public async Task<UserDetailResponse> GetUserDetail(Guid id)
+        {
+            var user = await _userRepository.GetByIdAsync(id);
+            if (user == null)
+            {
+                throw new NotFoundException($"User with ID {id} not found.");
+            }
+
+            var userDetailResponse = user.ToUserDetailResponse();
+
+            return userDetailResponse;
+        }
+
+        public async Task UpdateUser(Guid id, AdminUpdateUserRequest request)
+        {
+            var user = await _userRepository.GetByIdAsync(id);
+            if (user == null)
+            {
+                throw new NotFoundException($"User with ID {id} not found.");
+            }
+
+            if (!String.IsNullOrWhiteSpace(request.FullName))
+            {
+                user.FullName = request.FullName;
+            }
+
+            if (!String.IsNullOrWhiteSpace(request.Email))
+            {
+                user.Email = request.Email;
+            }
+
+            if (!String.IsNullOrWhiteSpace(request.Phone))
+            {
+                user.Phone = request.Phone;
+            }
+
+            if (request.IsActive.HasValue)
+            {
+                user.IsActive = request.IsActive.Value;
+            }
+
+            if (request.Roles != null && request.Roles.Count > 0)
+            {
+                var allowedRoles = new HashSet<string> { "Customer", "Seller", "Admin" };
+                foreach (var role in request.Roles)
+                {
+                    if (!allowedRoles.Contains(role))
+                    {
+                        throw new BadRequestException($"Invalid role: {role}");
+                    }
+                }
+
+                user.UserRoles.Clear();
+                foreach (var role in request.Roles)
+                {
+                    user.UserRoles.Add(new UserRole { UserId = user.Id, Role = role });
+                }
+            }
+
+            _userRepository.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        public async Task DeleteUser(Guid id)
+        {
+            var user = await _userRepository.GetByIdAsync(id);
+            if (user == null)
+            {
+                throw new NotFoundException($"User with ID {id} not found.");
+            }
+            _userRepository.Delete(user);
+            await _unitOfWork.SaveChangesAsync();
         }
     }
 }

@@ -21,6 +21,25 @@ namespace StealDeal.Services.Identity.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetUserDetail(Guid id)
+        {
+            var result = await _userService.GetUserDetail(id);
+            return Ok(result);
+        }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateUser(Guid id, [FromBody] AdminUpdateUserRequest request)
+        {
+            await _userService.UpdateUser(id, request);
+            return Ok();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteUser(Guid id)
+        {
+            await _userService.DeleteUser(id);
+            return NoContent();
+        }
     }
 }

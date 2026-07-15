@@ -81,7 +81,13 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
 
         public async Task<User?> GetByIdAsync(Guid id)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            // might add more include later if needed
+            // like user trust score events
+            return await _context.Users
+                .Include(u => u.UserRoles)
+                .Include(u => u.UserAddresses)
+                .Include(u => u.UserTrustScore)
+                .FirstOrDefaultAsync(u => u.Id == id);
         }
 
         public async Task<bool> IsEmailUniqueAsync(string email)
