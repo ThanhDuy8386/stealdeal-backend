@@ -7,6 +7,17 @@
 
 ---
 
+## Nhật ký Tiến độ (Progress Log)
+
+- **2026-07-17**: 
+  - Hoàn thành setup CRUD cơ bản cho tất cả các service.
+  - Thiết lập thành công hạ tầng kết nối RabbitMQ (Host, Port, Credentials) trên môi trường cục bộ cho cả **Identity** và **Notification** service.
+  - Hoàn thiện hoàn chỉnh luồng xử lý `resend-otp` và `register`:
+    - **Identity (Producer)**: Áp dụng Outbox Pattern để lưu trữ sự kiện trước khi publish. Bổ sung cơ chế bảo đảm phân phối tin cậy 2 tầng (**Publisher Confirms** cấp độ Exchange + **Mandatory Return** cấp độ routing sang Queue). Nếu Broker không nhận hoặc không thể route tin nhắn đến bất kỳ queue nào, Publisher sẽ quăng Exception để Outbox tiếp tục retry ở các đợt quét tiếp theo.
+    - **Notification (Consumer)**: Triển khai background service `EmailVerificationConsumer` dựa trên thư viện `RabbitMQ.Client` v7.x async-first API. Worker tự động khai báo queue, binding và ghi nhận thông tin `NotificationProfile` vào DB khi bắt được event `SendEmailVerificationOtpEvent` thành công.
+
+---
+
 ## Phần 1: Review Identity Service Hiện Tại
 
 ### 1.1 Tổng quan kiến trúc

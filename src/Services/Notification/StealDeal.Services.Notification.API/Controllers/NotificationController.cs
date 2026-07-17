@@ -56,7 +56,7 @@ namespace StealDeal.Services.Notification.API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin")] // External creation (like microservice events) would usually be done by rabbitmq consumer, admin endpoint is just for testing/system use.
+        // [Authorize(Roles = "Admin")] // External creation (like microservice events) would usually be done by rabbitmq consumer, admin endpoint is just for testing/system use.
         public async Task<IActionResult> Create([FromBody] CreateNotificationRequest request)
         {
             var result = await _notificationService.CreateNotificationAsync(request);

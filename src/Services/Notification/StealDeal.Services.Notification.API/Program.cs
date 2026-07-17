@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using StealDeal.Services.Notification.API.Middlewares;
+using StealDeal.Services.Notification.Infrastructure.Configuration;
+using StealDeal.Services.Notification.Infrastructure.BackgroundService;
 using StealDeal.Services.Notification.Application.Services;
 using StealDeal.Services.Notification.Application.Services.Interfaces;
 using StealDeal.Services.Notification.Domain.Interfaces;
@@ -21,6 +23,11 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// ── RabbitMQ & Consumers ────────────────────────────────────
+builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
+builder.Services.Configure<EmailVerificationConsumerSettings>(builder.Configuration.GetSection("EmailVerificationConsumer"));
+builder.Services.AddHostedService<EmailVerificationConsumer>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
