@@ -1,484 +1,561 @@
-# StealDeal Backend — Identity Service Review & 2-Month Development Plan
+# StealDeal Backend Review And Completion Plan
 
-> **Date**: 2026-06-29  
-> **Scope**: Review Identity service hiện tại + Kế hoạch 2 tháng (07/2026 – 08/2026) implement full backend  
-> **Architecture**: Microservices (Identity, Store, Order, Payment, Notification)  
-> **Patterns**: Outbox Pattern, Saga Choreography
+> Last updated: 2026-07-19  
+> Deadline: 2026-08-24  
+> Scope: review completed backend work, compare it with the old plan, and define the remaining work needed to complete the backend for the capstone ecommerce surprise-bag project.
 
----
+## 1. Product And Architecture Context
 
-## Nhật ký Tiến độ (Progress Log)
+StealDeal is a capstone ecommerce backend inspired by the surprise bag model of Too Good To Go.
 
-- **2026-07-17**: 
-  - Hoàn thành setup CRUD cơ bản cho tất cả các service.
-  - Thiết lập thành công hạ tầng kết nối RabbitMQ (Host, Port, Credentials) trên môi trường cục bộ cho cả **Identity** và **Notification** service.
-  - Hoàn thiện hoàn chỉnh luồng xử lý `resend-otp` và `register`:
-    - **Identity (Producer)**: Áp dụng Outbox Pattern để lưu trữ sự kiện trước khi publish. Bổ sung cơ chế bảo đảm phân phối tin cậy 2 tầng (**Publisher Confirms** cấp độ Exchange + **Mandatory Return** cấp độ routing sang Queue). Nếu Broker không nhận hoặc không thể route tin nhắn đến bất kỳ queue nào, Publisher sẽ quăng Exception để Outbox tiếp tục retry ở các đợt quét tiếp theo.
-    - **Notification (Consumer)**: Triển khai background service `EmailVerificationConsumer` dựa trên thư viện `RabbitMQ.Client` v7.x async-first API. Worker tự động khai báo queue, binding và ghi nhận thông tin `NotificationProfile` vào DB khi bắt được event `SendEmailVerificationOtpEvent` thành công.
+Core roles:
 
----
+- `Admin`: manages users, categories, store verification, disputes, refunds, and system-level status workflows.
+- `Buyer`/`Customer`: registers, logs in, buys surprise bags, views orders/payments/notifications, and reviews stores/bags.
+- `Seller`: creates a store, creates surprise bags, manages store-related orders, replies to reviews, and participates in cancellation/refund workflows.
 
-## Phần 1: Review Identity Service Hiện Tại
+Current backend architecture:
 
-### 1.1 Tổng quan kiến trúc
+- Microservice architecture.
+- Clean Architecture per service: `Domain`, `Application`, `Infrastructure`, `API`.
+- Database-per-service direction.
+- JWT Bearer authentication shared across services.
+- RabbitMQ integration currently implemented for Identity -> Notification OTP flow.
+- Event-driven saga is planned but not fully implemented yet.
 
-Dự án tuân thủ Clean Architecture 4 layers rất tốt:
+Current services:
 
-| Layer | Project | Trách nhiệm |
-|-------|---------|-------------|
-| Domain | `StealDeal.Services.Identity.Domain` | Entities, Repository interfaces |
-| Application | `StealDeal.Services.Identity.Application` | DTOs, Service interfaces, Service implementations |
-| Infrastructure | `StealDeal.Services.Identity.Infrastructure` | EF Core, RabbitMQ, JWT, BCrypt, Background jobs |
-| API | `StealDeal.Services.Identity.API` | Controllers, DI, Middleware |
+- `Identity`
+- `Store`
+- `Order`
+- `Payment`
+- `Notification`
 
-> [!TIP]
-> Dependency direction đúng: API → Application ← Infrastructure → Domain. Domain layer không có dependency ngoài nào.
+For a compact handoff snapshot, also read:
 
-### 1.2 Các chức năng đã hoàn thiện
+- `STEALDEAL_BACKEND_CONTEXT_OVERVIEW.md`
+- `Identity/IDENTITY_PLAN.md` when touching Identity or RabbitMQ OTP flow.
 
-- ✅ Register (tạo user + role + trust score + OTP + outbox message)
-- ✅ Login (verify password, issue token pair)
-- ✅ Refresh Token Rotation (revoke old, issue new)
-- ✅ Email Verification OTP (hash OTP, verify, consume)
-- ✅ Resend OTP (revoke active OTP, create new, create outbox)
-- ✅ GET /me (protected endpoint test JWT)
-- ✅ Outbox Pattern (background job scan → publish to RabbitMQ)
-- ✅ RabbitMQ publisher (topic exchange, reuse connection, channel per publish)
+## 2. Current Completion Status As Of 2026-07-19
 
-### 1.3 Điểm mạnh 👍
+### 2.1 Build Status
 
-1. **Outbox Pattern triển khai đúng**: Business data + outbox message trong cùng 1 transaction → đảm bảo at-least-once delivery.
-2. **Security tốt**: Password hash bằng BCrypt, refresh token hash bằng SHA256, OTP hash bằng SHA256. Không lưu raw secret trong DB.
-3. **Token Rotation**: Refresh token cũ bị revoke khi issue token mới → chống token replay.
-4. **RabbitMQ connection management**: Double-check locking pattern với `SemaphoreSlim`, reuse connection, `IAsyncDisposable`.
-5. **Background service resilient**: Try-catch per message, retry count, fail after max retry, không crash toàn bộ batch khi 1 message lỗi.
-6. **Clean Architecture tuân thủ**: Interface segregation tốt, không leak infrastructure detail vào Application layer.
+All 5 service solutions build successfully:
 
-### 1.4 Các vấn đề cần cải thiện ⚠️
+- `Identity/StealDeal.Services.Identity.slnx`: build succeeded, 0 warnings.
+- `Store/StealDeal.Services.Store.slnx`: build succeeded, 3 warnings.
+- `Order/StealDeal.Services.Order.slnx`: build succeeded, 2 warnings.
+- `Payment/StealDeal.Services.Payment.slnx`: build succeeded, 2 warnings.
+- `Notification/StealDeal.Services.Notification.slnx`: build succeeded, 2 warnings.
 
-#### 1.4.1 Thiếu Global Exception Handling / Result Pattern
+Build warnings to address:
 
-[AuthController.cs](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.API/Controllers/AuthController.cs) dùng try-catch lặp lại ở mọi action. Hiện tại catch `InvalidOperationException` ở register nhưng lại catch `UnauthorizedAccessException` ở verify-email (mà verify-email throw `InvalidOperationException` → sẽ trả 500 thay vì 400).
+- `Microsoft.OpenApi 2.0.0` has a known high severity vulnerability in Store, Order, Payment, and Notification API projects.
+- `Store.Application/DTOs/Requests/CreateBagRequest.cs`: non-nullable `Status` is not initialized.
 
-```csharp
-// VerifyEmail catch UnauthorizedAccessException nhưng VerifyEmailOtpAsync throw InvalidOperationException
-// → Bug: khi OTP invalid sẽ trả 500 Internal Server Error thay vì 400 Bad Request
+### 2.2 Completed Work
+
+Identity:
+
+- Register user.
+- Login.
+- Refresh token rotation.
+- Logout using refresh token cookie.
+- Email verification OTP generation and verification.
+- Resend OTP.
+- `GET /api/auth/me` JWT test endpoint.
+- Basic user management endpoints.
+- Password hashing with BCrypt.
+- Refresh token hash storage.
+- OTP hash storage.
+- Outbox table and background processor.
+- RabbitMQ publisher with publisher confirms and mandatory returns.
+
+Notification:
+
+- Notification CRUD/read workflow.
+- `EmailVerificationConsumer` background worker.
+- RabbitMQ queue/exchange/binding setup for email verification events.
+- Consumes `identity.user.email-verification.requested`.
+- Persists OTP notification into `NotificationProfile`.
+
+Store:
+
+- Category CRUD.
+- Store profile CRUD-like workflows.
+- Store verify/toggle-active endpoints.
+- Surprise bag CRUD.
+- Surprise bag category many-to-many relationship.
+- Store review create/read/reply/report workflows.
+- Business checks for store ownership, verified/active store before bag creation, rating range, and duplicate review per order.
+
+Order:
+
+- Order create/get/list/update-status.
+- Store orders endpoint.
+- Pickup dispute create/get/list/update-status.
+- Basic role and ownership checks.
+- JSON persistence for dispute evidence URLs.
+
+Payment:
+
+- Transaction create/get/list/update-status.
+- Refund create/get/list/update-status.
+- Prevent duplicate pending/success transactions for one order.
+- Refund only successful transactions.
+- Refund amount cannot exceed original transaction amount across pending/processed refunds.
+
+Cross-cutting:
+
+- Clean Architecture shape exists for all 5 services.
+- Global exception middleware exists in all APIs.
+- JWT bearer validation is wired across services.
+- EF Core DbContexts exist for all services.
+
+## 3. Comparison With The Old Plan
+
+The old plan was useful as the original direction, but several parts are now outdated or need recalibration.
+
+### 3.1 Completed Or Partially Completed From Old Plan
+
+- Basic CRUD for all services is done.
+- Identity auth flow is much more complete than the original early plan.
+- Identity outbox and RabbitMQ publisher are implemented.
+- Notification RabbitMQ consumer for OTP is implemented.
+- Clean Architecture structure is consistent across services.
+- Global exception middleware exists across services.
+
+### 3.2 Changed Direction
+
+The old Store plan used a generic ecommerce product model:
+
+- `Product`
+- `ProductVariant`
+- `StockReservation`
+
+The current code has moved toward the actual capstone domain:
+
+- `StoreProfile`
+- `SurpriseBag`
+- `Category`
+- `StoreReview`
+
+This is a good direction for the surprise-bag product. The plan should now focus on surprise bag stock/quantity reservation rather than generic product variants.
+
+### 3.3 Still Not Done From Old Plan
+
+- Shared BuildingBlocks library.
+- Standardized `ApiResponse<T>` or `Result<T>`.
+- Shared integration event contracts.
+- Shared RabbitMQ consumer/producer abstractions.
+- Docker Compose.
+- Store stock reservation.
+- Order saga coordination.
+- Payment gateway or mock payment gateway.
+- Payment/order/store integration events.
+- Real email sending from Notification.
+- Processed message idempotency table.
+- API Gateway.
+- Health checks.
+- Unit/integration tests.
+- Deployment guide and Postman/OpenAPI documentation.
+
+### 3.4 Newly Found Issues Since Old Plan
+
+- `Payment.API/Program.cs` uses `GetConnectionString("IdentityDb")`, while `Payment.API/appsettings.json` has `StoreDb`. This must become `PaymentDb`.
+- Store authorization is mostly commented out.
+- Identity `UserController` admin-style endpoints are not protected with explicit admin authorization.
+- Role naming is inconsistent between product language (`Buyer`) and code (`Customer`).
+- Status values are free-form strings in multiple services.
+- OTP rate limiting fields exist but are not enforced.
+- Store/Order/Payment migrations are not visible in the current tree.
+- Notification currently stores OTP notification in DB but does not send real email.
+
+## 4. Target Backend Definition For 2026-08-24
+
+The backend should be considered capstone-ready if the following P0/P1 scope is complete.
+
+### 4.1 P0 Must Have
+
+Identity:
+
+- Stable register/login/refresh/logout.
+- Email verification OTP works end-to-end.
+- Admin user management protected by Admin authorization.
+- Role naming decision documented and consistently handled.
+
+Store:
+
+- Seller can create one store.
+- Admin can verify/activate/deactivate stores.
+- Seller can create/update/delete surprise bags.
+- Surprise bag quantity can be safely reserved/released.
+- Buyer can browse bags/stores/categories.
+- Buyer can review completed orders.
+
+Order:
+
+- Buyer can create an order from one or more surprise bags.
+- Order stores enough snapshot data to remain valid even if bag/store changes later.
+- Order status flow is controlled by constants/enums and permission checks.
+- Order created event starts the saga.
+- Order can be cancelled on stock/payment failure.
+
+Payment:
+
+- Create payment transaction for an order.
+- Support a mock payment success/failure flow at minimum.
+- Publish payment completed/failed events.
+- Refund records and basic refund status management work.
+
+Notification:
+
+- OTP email or OTP notification flow works reliably.
+- In-app notifications for key order/payment events.
+- Consumer idempotency exists.
+
+Infrastructure:
+
+- All services build with no critical warnings.
+- All services have migrations and can create/update local SQL Server databases.
+- RabbitMQ event flow works locally.
+- Docker Compose or a clear local run guide exists.
+- API docs or Postman collection exists for demo.
+
+### 4.2 P1 Should Have
+
+- API Gateway using YARP or Ocelot.
+- Health checks for DB and RabbitMQ.
+- Shared integration event contracts.
+- Shared constants for routing keys/status values.
+- Consumer dead-letter queue.
+- Basic automated tests for critical flows.
+- Trust score updates from order/dispute/no-show events.
+
+### 4.3 P2 Nice To Have
+
+- Real payment gateway integration such as VNPay or Momo.
+- Push notification with Firebase FCM.
+- Rich admin dashboard endpoints.
+- Advanced rate limiting and audit logs.
+- Full unit/integration/e2e test coverage.
+
+## 5. Planned Event-Driven Order Flow
+
+Recommended MVP saga choreography:
+
+```text
+Buyer creates order
+  -> Order Service saves Pending order
+  -> Order publishes order.created
+  -> Store consumes order.created
+  -> Store reserves SurpriseBag.QuantityRemaining
+  -> Store publishes store.stock.reserved or store.stock.reservation-failed
+  -> Order consumes stock result
+  -> If stock failed: Order marks Cancelled
+  -> If stock reserved: Payment creates/awaits transaction
+  -> Payment publishes payment.completed or payment.failed
+  -> Order consumes payment result and marks Confirmed/Cancelled
+  -> Store consumes payment.failed/order.cancelled and releases stock if needed
+  -> Notification consumes major events and creates notifications
 ```
 
-> [!WARNING]
-> **Bug ở endpoint verify-email và resend-otp**: Exception type không khớp với catch block. Nên triển khai **global exception handler middleware** hoặc **Result pattern** (`Result<T>`) thay vì throw exception cho business logic.
+Minimum event names:
+
+- `identity.user.email-verification.requested`
+- `order.created`
+- `order.cancelled`
+- `order.confirmed`
+- `store.stock.reserved`
+- `store.stock.reservation-failed`
+- `store.stock.released`
+- `payment.completed`
+- `payment.failed`
+- `payment.refunded`
+- `notification.created` or no publish needed for MVP
+
+## 6. Completion Timeline To 2026-08-24
+
+Today is 2026-07-19. Deadline is 2026-08-24. That leaves 36 days.
+
+The plan below prioritizes a demo-ready backend over perfect architecture. If time becomes tight, complete P0 first, then P1, then P2.
+
+### Week 1: 2026-07-20 To 2026-07-26 - Stabilize Foundation
+
+Goal: make the current 5 services reliable enough to build on.
+
+Tasks:
+
+- Fix Payment connection string and database naming.
+- Add or verify EF migrations for Store, Order, and Payment.
+- Fix build warnings:
+  - Upgrade/fix vulnerable `Microsoft.OpenApi` dependency.
+  - Fix `CreateBagRequest.Status` nullable warning.
+- Decide and document role naming:
+  - Option A: keep code role as `Customer`, use Buyer only in UI/product docs.
+  - Option B: rename role to `Buyer` everywhere.
+- Re-enable Store authorization where needed.
+- Protect Identity admin-style user endpoints with Admin authorization.
+- Add status constants/enums for core flows:
+  - Bag status.
+  - Order status.
+  - Payment transaction status.
+  - Refund status.
+  - Outbox status.
+- Enforce basic OTP rate limits:
+  - Max verify attempts per OTP.
+  - Max resend count or resend cooldown.
+- Add a local run checklist for SQL Server and RabbitMQ.
+- Update `STEALDEAL_BACKEND_CONTEXT_OVERVIEW.md` after these changes.
+
+Exit criteria:
+
+- All 5 services build with no errors.
+- Payment has correct DB config.
+- Store/Order/Payment migrations are present.
+- Auth-protected endpoints no longer accidentally depend on missing claims.
+- The current system can be run locally service by service.
+
+### Week 2: 2026-07-27 To 2026-08-02 - Surprise Bag Stock And Order Saga Foundation
+
+Goal: implement the core order-to-stock reservation flow.
+
+Tasks:
+
+- Define shared integration event DTOs.
+- Decide whether to create a small shared project or duplicate contracts temporarily for speed.
+- Add Store stock reservation logic:
+  - Validate bag exists and is active/available.
+  - Validate pickup/expiry rules.
+  - Validate `QuantityRemaining >= requested quantity`.
+  - Decrease `QuantityRemaining` on reserve.
+  - Release stock on cancellation/payment failure.
+- Add Store event consumer for `order.created`.
+- Add Store event publisher/outbox for:
+  - `store.stock.reserved`
+  - `store.stock.reservation-failed`
+  - `store.stock.released`
+- Add Order outbox publisher for `order.created`.
+- Add Order consumer for Store stock result.
+- Update Order status flow:
+  - `Pending`
+  - `StockReserved`
+  - `PaymentPending`
+  - `Confirmed`
+  - `Cancelled`
+  - `Completed`
+  - `Disputed`
+- Add minimal idempotency strategy for stock reservation event handling.
+
+Exit criteria:
+
+- Creating an order publishes `order.created`.
+- Store consumes it and reserves/rejects stock.
+- Order reacts to stock result.
+- Stock does not go negative in normal local testing.
+
+### Week 3: 2026-08-03 To 2026-08-09 - Payment Flow And Notification Expansion
+
+Goal: connect payment into the saga and make Notification useful beyond OTP.
+
+Tasks:
+
+- Implement mock payment flow:
+  - Create transaction for order.
+  - Mark transaction `Success` or `Failed` through endpoint or mock callback.
+  - Publish `payment.completed` or `payment.failed`.
+- Add Payment outbox publisher.
+- Add Payment consumer if needed for `order.cancelled`.
+- Add Order consumers for:
+  - `payment.completed`
+  - `payment.failed`
+- Add Store consumer for:
+  - `payment.failed`
+  - `order.cancelled`
+- Add Notification consumers for:
+  - `order.created`
+  - `order.confirmed`
+  - `order.cancelled`
+  - `payment.completed`
+  - `payment.failed`
+  - `payment.refunded`
+- Add `ProcessedMessage` or equivalent idempotency table in Notification.
+- Decide whether OTP is real email or in-app-only for capstone demo.
+- If real email is required:
+  - Add SMTP/SendGrid abstraction.
+  - Add appsettings configuration.
+  - Send real OTP email from Notification consumer.
+
+Exit criteria:
+
+- Happy path works locally:
+  - Buyer creates order.
+  - Store reserves stock.
+  - Payment succeeds.
+  - Order becomes Confirmed.
+  - Notification records are created.
+- Failure path works locally:
+  - Payment fails.
+  - Order becomes Cancelled.
+  - Store releases stock.
+
+### Week 4: 2026-08-10 To 2026-08-16 - Gateway, Hardening, And Admin Workflows
+
+Goal: make the backend easier to demo and less fragile.
+
+Tasks:
+
+- Add API Gateway using YARP or Ocelot if time allows.
+- Centralize frontend-facing routing through gateway.
+- Add CORS configuration for frontend.
+- Add health checks:
+  - Database health per service.
+  - RabbitMQ health for messaging services.
+- Add role/ownership hardening:
+  - Seller can only access own store/bags/orders.
+  - Buyer can only access own orders/payments/notifications.
+  - Admin endpoints require Admin role.
+- Add input validation cleanup for DTOs.
+- Add standardized response wrapper only if it does not slow delivery.
+- Add refund compensation behavior:
+  - On order cancellation after successful payment, create refund record or mark refund needed.
+  - Publish `payment.refunded` when refund processed.
+- Add trust score MVP if time allows:
+  - Successful pickup increases count.
+  - No-show/dispute can reduce score.
+
+Exit criteria:
+
+- Gateway or direct-service run guide is ready.
+- Health endpoints work.
+- Main authorization gaps are closed.
+- Refund workflow is demoable.
+
+### Week 5: 2026-08-17 To 2026-08-23 - Testing, Documentation, And Demo Polish
+
+Goal: reduce risk before the 2026-08-24 deadline.
+
+Tasks:
+
+- Add unit tests for critical application services:
+  - `AuthService`
+  - Store reservation service
+  - `OrderService` status transitions
+  - `TransactionService`
+  - `RefundService`
+- Add integration tests or manual verification scripts for:
+  - Identity outbox -> RabbitMQ -> Notification consumer.
+  - Order -> Store reserve -> Payment -> Order confirm.
+  - Payment failure -> Store release -> Order cancel.
+- Prepare API documentation:
+  - OpenAPI/Swagger endpoints.
+  - Postman collection.
+  - Example request bodies.
+  - Required auth/roles per endpoint.
+- Prepare deployment/local run documentation:
+  - Required tools.
+  - SQL Server setup.
+  - RabbitMQ setup.
+  - Migration commands.
+  - Service run order.
+- Clean up commented-out authorization and stale TODOs.
+- Update both docs:
+  - `STEALDEAL_BACKEND_CONTEXT_OVERVIEW.md`
+  - `STEALDEAL_REVIEW_AND_PLAN.md`
+
+Exit criteria:
+
+- Main flows are tested or manually verified.
+- Demo script is ready.
+- New context can understand the project by reading the docs.
+- No known P0 blocker remains.
+
+### Final Day: 2026-08-24 - Buffer And Submission
+
+Goal: only fix blockers and prepare final demo/submission material.
+
+Tasks:
+
+- Freeze feature work unless a P0 bug appears.
+- Run all builds.
+- Run tests/manual flow checklist.
+- Verify database migrations from clean database.
+- Verify RabbitMQ queues/bindings.
+- Verify frontend integration routes if frontend is available.
+- Record remaining limitations honestly in documentation.
+
+## 7. Priority Matrix
+
+### P0 Must Finish
+
+- Payment DB config fix.
+- Store/Order/Payment migrations.
+- Authorization hardening for obvious Admin/Seller/Buyer routes.
+- Surprise bag stock reserve/release.
+- Order created event.
+- Store stock result event.
+- Payment success/failure event.
+- Order status reaction to stock/payment.
+- Notification for key events.
+- Local run guide and API docs.
+
+### P1 Should Finish
+
+- API Gateway.
+- Health checks.
+- Consumer idempotency.
+- DLQ/retry policy.
+- Refund compensation.
+- Basic automated tests.
+- Real email sending.
+
+### P2 Nice To Have
+
+- Real VNPay/Momo integration.
+- Push notification.
+- Full BuildingBlocks refactor.
+- Full standardized response/result pattern.
+- Trust score event consumers.
+- Advanced admin analytics.
+
+## 8. Risk Register
+
+| Risk | Level | Mitigation |
+|------|-------|------------|
+| Saga implementation becomes too large | High | Start with happy path and one failure path only. Add edge cases after demo path works. |
+| Cross-service ownership checks are hard | High | Use JWT claims or temporary trusted internal assumptions for MVP, then harden key endpoints. |
+| RabbitMQ duplicate delivery | Medium | Add `ProcessedMessage` table for consumers. Keep handlers idempotent. |
+| Stock can go negative | High | Use database transaction and conditional update/check before decrementing quantity. |
+| Payment gateway takes too long | High | Use mock payment for capstone demo, keep real gateway as P2. |
+| Documentation falls behind code | Medium | Update context overview after each major completed task. |
+| OpenAPI vulnerability warning remains | Medium | Upgrade/remove vulnerable package or document if framework package controls it. |
+| Timeline gets tight | High | Cut P2 first, then P1. Do not cut the order-stock-payment happy path. |
+
+## 9. Suggested Working Rules From Now To Deadline
+
+- After each major feature, update `STEALDEAL_BACKEND_CONTEXT_OVERVIEW.md`.
+- After each week, update this file's progress section.
+- Keep each service buildable before moving to the next service.
+- Prefer small, working event flows over large incomplete abstractions.
+- Do not spend too much time on a shared BuildingBlocks refactor until the saga happy path works.
+- Use explicit constants/enums for statuses and routing keys before the saga expands.
+- Keep manual API request examples for every completed flow.
+
+## 10. Progress Log
+
+### 2026-07-17
+
+- Basic CRUD setup completed for all 5 services.
+- RabbitMQ connection/settings completed locally for Identity and Notification.
+- `register` and `resend-otp` flow completed:
+  - Identity creates OTP and outbox event.
+  - Identity outbox processor publishes event to RabbitMQ.
+  - Notification consumer receives event and stores `NotificationProfile`.
+
+### 2026-07-19
+
+- Added `STEALDEAL_BACKEND_CONTEXT_OVERVIEW.md` as a durable context handoff file.
+- Reviewed current source code and recalibrated this completion plan.
+- Verified all 5 service solutions build successfully.
+- Recorded build warnings and high-priority config/security gaps.
 
-#### 1.4.2 Magic Strings cho Status
-
-[OutboxMessage.cs](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Domain/Models/OutboxMessage.cs#L10) dùng magic string `"Pending"`, `"Processed"`, `"Failed"`. Nên dùng `enum` hoặc `static class` constants.
-
-```csharp
-// Hiện tại
-public string Status { get; set; } = "Pending";
-
-// Nên
-public static class OutboxStatus
-{
-    public const string Pending = "Pending";
-    public const string Processed = "Processed";
-    public const string Failed = "Failed";
-}
-```
-
-#### 1.4.3 Thiếu CancellationToken propagation
-
-[AuthService.cs](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Application/Services/AuthService.cs): Các method nhận `CancellationToken` nhưng **không truyền** xuống repository calls. Ví dụ `LoginAsync` nhận `cancellationToken` nhưng `_userRepository.GetByEmailAsync()` không nhận token.
-
-#### 1.4.4 Repository method inconsistency
-
-- [IUserRepository](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Domain/Interfaces/Repositories/IUserRepository.cs): `UpdateAsync` trả `Task` nhưng [UserRepository.UpdateAsync](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Infrastructure/Repositories/UserRepository.cs#L54-L57) chỉ gọi `_context.Users.Update()` (synchronous) → method async nhưng không await gì.
-- `DeleteAsync` cũng tương tự, return `Task.CompletedTask`.
-- [IRefreshTokenRepository.Update](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Domain/Interfaces/Repositories/IRefreshTokenRepository.cs#L9) là `void` nhưng `IUserRepository.UpdateAsync` là `Task` → không nhất quán. Nên thống nhất: `Update` là `void` (vì EF change tracking, save ở UoW).
-
-#### 1.4.5 `IsEmailUniqueAsync` performance
-
-[UserRepository.IsEmailUniqueAsync](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Infrastructure/Repositories/UserRepository.cs#L48-L52) load toàn bộ User entity chỉ để check tồn tại. Nên dùng `AnyAsync`:
-
-```csharp
-public async Task<bool> IsEmailUniqueAsync(string email)
-{
-    return !await _context.Users.AnyAsync(u => u.Email == email);
-}
-```
-
-#### 1.4.6 Domain model thiếu encapsulation
-
-Tất cả entity dùng `public set` → cho phép thay đổi state từ bất kỳ đâu. Với DDD approach, nên dùng `private set` + factory method/domain method. Tuy nhiên vì dùng EF Core, đây là trade-off chấp nhận được cho tốc độ phát triển.
-
-#### 1.4.7 Thiếu Rate Limiting cho OTP
-
-- Không giới hạn số lần resend OTP (chỉ có `ResendCount` field nhưng không check).
-- Không giới hạn số lần verify OTP sai (chỉ có `AttemptCount` field nhưng không tăng khi verify sai).
-
-#### 1.4.8 Outbox `GetPendingBatchAsync` không có locking
-
-Nếu chạy nhiều instance Identity service (scale out), 2 instance có thể pick cùng 1 batch outbox messages → duplicate publish. Cần row-level locking hoặc `SELECT ... WITH (UPDLOCK, READPAST)` cho SQL Server.
-
-#### 1.4.9 Thiếu Logging ở Application layer
-
-[AuthService](file:///c:/Users/ADMIN/Desktop/Capstone-BE/stealdeal-backend/src/Services/Identity/StealDeal.Services.Identity.Application/Services/AuthService.cs) không inject `ILogger`. Chỉ có logging ở `OutboxMessageProcessor`. Nên thêm structured logging cho register, login, refresh failures.
-
-#### 1.4.10 Thiếu Standardized API Response
-
-Mỗi endpoint trả response format khác nhau: `TokenResponse`, `{ message = "..." }`, raw object. Nên có `ApiResponse<T>` wrapper thống nhất.
-
-### 1.5 Tóm tắt đánh giá
-
-| Tiêu chí | Đánh giá | Ghi chú |
-|----------|----------|---------|
-| Clean Architecture | ⭐⭐⭐⭐⭐ | Tuân thủ tốt |
-| Security | ⭐⭐⭐⭐ | Tốt, cần thêm rate limiting |
-| Error Handling | ⭐⭐ | Bug exception mismatch, thiếu global handler |
-| Code Consistency | ⭐⭐⭐ | Repository interface không nhất quán |
-| Messaging/Outbox | ⭐⭐⭐⭐ | Tốt, cần locking cho scale-out |
-| Testing | ⭐ | Chưa có unit test / integration test |
-| Logging & Observability | ⭐⭐ | Chỉ có ở background service |
-
----
-
-## Phần 2: Kế Hoạch 2 Tháng (07/2026 – 08/2026)
-
-### 2.1 Tổng quan Services
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────────┐
-│ Identity │    │  Store   │    │  Order   │    │ Payment  │    │ Notification │
-│ Service  │    │ Service  │    │ Service  │    │ Service  │    │   Service    │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘    └──────┬───────┘
-     │               │               │               │                │
-     └───────────────┴───────────────┴───────────────┴────────────────┘
-                              RabbitMQ (stealdeal.events)
-```
-
-### 2.2 Saga Choreography — Order Flow
-
-```
-Customer tạo order
-    │
-    ▼
-[Order Service] ── order.created ──► [Store Service] kiểm kho & reserve
-    ▲                                        │
-    │                                        ▼
-    │                              store.stock.reserved ──► [Payment Service] xử lý thanh toán
-    │                              store.stock.failed ────► [Order Service] cancel order
-    │                                                              │
-    │                                                              ▼
-    │                                               payment.completed ──► [Order Service] confirm
-    │                                               payment.failed ──────► [Store Service] release stock
-    │                                                                      [Order Service] cancel
-    │
-    ▼
-[Notification Service] lắng nghe tất cả event → gửi email/push
-```
-
----
-
-### 2.3 Timeline Chi Tiết
-
-#### 🗓️ Tuần 1 (01/07 – 06/07): Foundation & Shared Infrastructure
-
-**Mục tiêu**: Xây dựng shared components dùng chung cho tất cả services.
-
-- [ ] **Shared Kernel / BuildingBlocks library**
-  - `ApiResponse<T>` standardized response wrapper
-  - `Result<T>` pattern thay thế exception cho business logic
-  - Global exception handler middleware
-  - Base entity classes (`BaseEntity`, `AuditableEntity`)
-  - Shared outbox infrastructure (tái sử dụng từ Identity)
-  - Shared RabbitMQ consumer base class
-  - Common integration event contracts (shared DTOs giữa services)
-  - Constants cho exchange names, routing keys
-- [ ] **Fix Identity Service issues** (từ review)
-  - Fix verify-email / resend-otp exception mismatch bug
-  - Thêm global exception handler middleware
-  - Thêm `ApiResponse<T>` wrapper
-  - Dùng constants cho outbox status
-  - Thêm `CancellationToken` propagation
-  - Thống nhất repository interfaces
-  - Fix `IsEmailUniqueAsync` dùng `AnyAsync`
-  - Thêm OTP rate limiting (max resend, max attempts)
-- [ ] **Docker Compose setup**
-  - SQL Server container
-  - RabbitMQ container
-  - Mỗi service 1 container
-  - Network configuration
-
----
-
-#### 🗓️ Tuần 2-3 (07/07 – 20/07): Store Service
-
-**Mục tiêu**: Hoàn thiện quản lý sản phẩm, danh mục, kho.
-
-**Domain Models:**
-- `Category` (Id, Name, Slug, ParentId, Image, IsActive)
-- `Product` (Id, SellerId, CategoryId, Name, Slug, Description, Condition, Images, Status)
-- `ProductVariant` (Id, ProductId, Sku, Price, OriginalPrice, Stock, Attributes)
-- `StockReservation` (Id, VariantId, OrderId, Quantity, Status, ExpiresAt)
-
-**Endpoints:**
-
-| Method | Route | Mô tả |
-|--------|-------|-------|
-| GET | `/api/categories` | Danh sách danh mục (tree) |
-| GET | `/api/categories/{slug}` | Chi tiết danh mục |
-| POST | `/api/categories` | Tạo danh mục (Admin) |
-| PUT | `/api/categories/{id}` | Sửa danh mục (Admin) |
-| DELETE | `/api/categories/{id}` | Xóa danh mục (Admin) |
-| GET | `/api/products` | Danh sách sản phẩm (paging, filter, search) |
-| GET | `/api/products/{slug}` | Chi tiết sản phẩm |
-| GET | `/api/products/seller/{sellerId}` | Sản phẩm theo seller |
-| POST | `/api/products` | Đăng sản phẩm (Seller) |
-| PUT | `/api/products/{id}` | Sửa sản phẩm (Seller) |
-| DELETE | `/api/products/{id}` | Xóa sản phẩm (Seller) |
-| PATCH | `/api/products/{id}/status` | Approve/Reject sản phẩm (Admin) |
-| POST | `/api/products/{id}/variants` | Thêm variant |
-| PUT | `/api/products/{id}/variants/{variantId}` | Sửa variant |
-| DELETE | `/api/products/{id}/variants/{variantId}` | Xóa variant |
-
-**Integration Events (Publish):**
-- `store.stock.reserved` — kho đã reserve thành công
-- `store.stock.reservation-failed` — không đủ hàng
-- `store.stock.released` — trả lại kho (khi order cancel/payment fail)
-
-**Integration Events (Consume):**
-- `order.created` → Reserve stock
-- `payment.failed` → Release stock
-- `order.cancelled` → Release stock
-
----
-
-#### 🗓️ Tuần 3-4 (14/07 – 27/07): Order Service
-
-**Mục tiêu**: Quản lý đơn hàng, trạng thái, saga coordination.
-
-**Domain Models:**
-- `Order` (Id, BuyerId, SellerId, Status, TotalAmount, ShippingAddress, Notes)
-- `OrderItem` (Id, OrderId, ProductId, VariantId, ProductName, Quantity, UnitPrice)
-- `OrderStatusHistory` (Id, OrderId, FromStatus, ToStatus, ChangedBy, Note)
-
-**Order Status Flow:**
-```
-Pending → StockReserved → PaymentProcessing → Confirmed → Shipping → Delivered → Completed
-    │           │                │                                         │
-    ▼           ▼                ▼                                         ▼
- Cancelled   Cancelled       Cancelled                                  Disputed → Resolved
-```
-
-**Endpoints:**
-
-| Method | Route | Mô tả |
-|--------|-------|-------|
-| POST | `/api/orders` | Tạo đơn hàng (Customer) |
-| GET | `/api/orders` | Danh sách đơn hàng (paging, filter theo role) |
-| GET | `/api/orders/{id}` | Chi tiết đơn hàng |
-| PATCH | `/api/orders/{id}/cancel` | Hủy đơn (Customer/Seller) |
-| PATCH | `/api/orders/{id}/confirm-shipping` | Xác nhận gửi hàng (Seller) |
-| PATCH | `/api/orders/{id}/confirm-delivery` | Xác nhận nhận hàng (Customer) |
-| PATCH | `/api/orders/{id}/complete` | Hoàn thành đơn |
-| GET | `/api/orders/{id}/history` | Lịch sử trạng thái |
-
-**Integration Events (Publish):**
-- `order.created` — đơn hàng mới (trigger reserve stock)
-- `order.cancelled` — đơn đã hủy (trigger release stock, refund)
-- `order.confirmed` — đơn đã xác nhận (sau payment success)
-- `order.completed` — đơn hoàn thành
-
-**Integration Events (Consume):**
-- `store.stock.reserved` → Chuyển trạng thái → PaymentProcessing
-- `store.stock.reservation-failed` → Cancel order
-- `payment.completed` → Confirm order
-- `payment.failed` → Cancel order
-
----
-
-#### 🗓️ Tuần 5 (28/07 – 03/08): Payment Service
-
-**Mục tiêu**: Xử lý thanh toán, tích hợp payment gateway.
-
-**Domain Models:**
-- `Payment` (Id, OrderId, BuyerId, Amount, Method, Status, TransactionId, GatewayResponse)
-- `PaymentMethod`: Enum (COD, BankTransfer, EWallet, VnPay, Momo)
-- `Refund` (Id, PaymentId, Amount, Reason, Status)
-
-**Endpoints:**
-
-| Method | Route | Mô tả |
-|--------|-------|-------|
-| POST | `/api/payments` | Tạo payment intent |
-| GET | `/api/payments/{id}` | Chi tiết payment |
-| GET | `/api/payments/order/{orderId}` | Payment theo order |
-| POST | `/api/payments/{id}/confirm` | Xác nhận thanh toán (webhook/manual) |
-| POST | `/api/payments/webhook/vnpay` | VNPay callback |
-| POST | `/api/payments/{id}/refund` | Yêu cầu hoàn tiền |
-| GET | `/api/payments/history` | Lịch sử thanh toán (user) |
-
-**Integration Events (Publish):**
-- `payment.completed` — thanh toán thành công
-- `payment.failed` — thanh toán thất bại
-- `payment.refunded` — hoàn tiền thành công
-
-**Integration Events (Consume):**
-- `store.stock.reserved` → Khởi tạo payment processing
-- `order.cancelled` → Cancel pending payment / Process refund
-
----
-
-#### 🗓️ Tuần 6 (04/08 – 10/08): Notification Service
-
-**Mục tiêu**: Email, push notification, in-app notification.
-
-**Domain Models:**
-- `NotificationTemplate` (Id, Type, Subject, Body, Channel)
-- `NotificationLog` (Id, UserId, Channel, Type, Status, SentAt)
-- `ProcessedMessage` (MessageId, ProcessedAt) — consumer idempotency
-
-**Channels:**
-- Email (SMTP / SendGrid)
-- In-app notification (lưu DB, query qua API)
-- Push notification (Firebase FCM — phase 2)
-
-**Endpoints:**
-
-| Method | Route | Mô tả |
-|--------|-------|-------|
-| GET | `/api/notifications` | Danh sách notification (user) |
-| GET | `/api/notifications/unread-count` | Số notification chưa đọc |
-| PATCH | `/api/notifications/{id}/read` | Đánh dấu đã đọc |
-| PATCH | `/api/notifications/read-all` | Đánh dấu tất cả đã đọc |
-
-**Integration Events (Consume):**
-- `identity.user.email-verification.requested` → Gửi OTP email
-- `order.created` → Thông báo seller có đơn mới
-- `order.confirmed` → Thông báo customer đơn đã xác nhận
-- `order.cancelled` → Thông báo bên liên quan
-- `payment.completed` → Thông báo thanh toán thành công
-- `payment.refunded` → Thông báo hoàn tiền
-- `order.completed` → Thông báo hoàn thành + mời đánh giá
-
----
-
-#### 🗓️ Tuần 7 (11/08 – 17/08): Identity Enhancement + Cross-Service Features
-
-**Mục tiêu**: Hoàn thiện Identity service, thêm các feature cross-service.
-
-- [ ] **Identity Service enhancements**
-  - `POST /api/auth/logout` — revoke all refresh tokens
-  - `POST /api/auth/change-password`
-  - `POST /api/auth/forgot-password` — send reset link via outbox
-  - `POST /api/auth/reset-password`
-  - `GET /api/users/{id}/profile` — public profile
-  - `PUT /api/users/profile` — update profile (name, phone, avatar)
-  - `CRUD /api/users/addresses` — quản lý địa chỉ
-  - `GET /api/admin/users` — admin quản lý user (paging, filter, ban)
-  - `PATCH /api/admin/users/{id}/ban` — ban user
-  - Trust score consumer (consume events từ Order service)
-- [ ] **API Gateway** (YARP hoặc Ocelot)
-  - Routing tới các services
-  - JWT validation tập trung
-  - Rate limiting
-  - CORS configuration
-- [ ] **Health Checks** cho tất cả services
-  - Database health
-  - RabbitMQ health
-  - Custom health endpoints
-
----
-
-#### 🗓️ Tuần 8 (18/08 – 24/08): Testing, Polish & Documentation
-
-**Mục tiêu**: Đảm bảo chất lượng, hoàn thiện.
-
-- [ ] **Unit Tests** (xUnit + Moq/NSubstitute)
-  - Test AuthService (register, login, refresh, verify OTP)
-  - Test Order saga transitions
-  - Test Payment processing
-  - Test Stock reservation logic
-- [ ] **Integration Tests**
-  - Test outbox → RabbitMQ → consumer flow
-  - Test saga end-to-end (order → stock → payment → confirm)
-  - Test API endpoints với WebApplicationFactory
-- [ ] **Saga Compensation Tests**
-  - Stock reservation fail → order cancelled
-  - Payment fail → stock released + order cancelled
-  - Timeout scenarios
-- [ ] **Documentation**
-  - API documentation (Swagger/OpenAPI cho mỗi service)
-  - Architecture decision records
-  - Deployment guide
-  - Postman collection cho tất cả endpoints
-- [ ] **Final Polish**
-  - Review tất cả TODO items
-  - Security review (input validation, authorization checks)
-  - Performance review (N+1 queries, missing indexes)
-  - Cleanup dead code, commented code
-
----
-
-### 2.4 Shared Integration Event Contracts
-
-```
-stealdeal.events (topic exchange)
-├── identity.user.email-verification.requested
-├── identity.user.registered
-├── identity.user.trust-score.updated
-├── store.stock.reserved
-├── store.stock.reservation-failed
-├── store.stock.released
-├── store.product.created
-├── store.product.updated
-├── order.created
-├── order.confirmed
-├── order.cancelled
-├── order.completed
-├── order.shipping
-├── order.delivered
-├── payment.completed
-├── payment.failed
-├── payment.refunded
-└── notification.sent
-```
-
-### 2.5 Database Strategy
-
-Mỗi service có database riêng (Database-per-Service pattern):
-
-| Service | Database | Ghi chú |
-|---------|----------|---------|
-| Identity | `StealDealIdentityDb` | ✅ Đã có |
-| Store | `StealDealStoreDb` | Products, Categories, Variants, Stock |
-| Order | `StealDealOrderDb` | Orders, OrderItems, StatusHistory |
-| Payment | `StealDealPaymentDb` | Payments, Refunds |
-| Notification | `StealDealNotificationDb` | Templates, Logs, ProcessedMessages |
-
-### 2.6 Rủi ro & Mitigation
-
-| Rủi ro | Mức độ | Mitigation |
-|--------|--------|-----------|
-| Saga compensation phức tạp | Cao | Start simple (happy path), thêm compensation dần |
-| Duplicate message processing | Trung bình | Idempotency key (`ProcessedMessages` table) |
-| Outbox concurrent processing | Trung bình | Row-level locking hoặc single-instance processor |
-| Payment gateway integration | Cao | Mock gateway cho dev, tích hợp real gateway khi deploy |
-| Timeline quá tight | Cao | Ưu tiên happy path trước, edge cases sau |
-| Cross-service data consistency | Trung bình | Eventual consistency + proper saga compensation |
-
-### 2.7 Priority Matrix (Nếu thiếu thời gian)
-
-| Priority | Feature | Lý do |
-|----------|---------|-------|
-| P0 (Must) | Store CRUD, Order Flow, Payment basic, Notification email | Core business |
-| P0 (Must) | Saga happy path (create → reserve → pay → confirm) | Core flow |
-| P1 (Should) | Saga compensation (rollback scenarios) | Data integrity |
-| P1 (Should) | API Gateway | Production readiness |
-| P2 (Nice) | Admin endpoints, Trust score | Enhancement |
-| P2 (Nice) | Push notification, FCM | Enhancement |
-| P3 (Later) | Full test coverage, Performance optimization | Quality |
-
----
-
-> [!IMPORTANT]
-> **Nguyên tắc quan trọng**: Mỗi service cần có cùng Clean Architecture structure như Identity (Domain → Application → Infrastructure → API) và cùng Outbox Pattern setup. Tái sử dụng BuildingBlocks library để tránh duplicate code.

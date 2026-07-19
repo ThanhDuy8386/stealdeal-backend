@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -7,13 +8,12 @@ using StealDeal.Services.Payment.Application.Services.Interfaces;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Infrastructure.Persistence;
 using StealDeal.Services.Payment.Infrastructure.Repositories;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ──────────────────────────────────────────────
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("IdentityDb")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("PaymentDb")));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
