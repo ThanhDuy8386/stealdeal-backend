@@ -26,6 +26,7 @@ builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Out
 // Dependency Injection for Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IEmailVerificationRepository, EmailVerificationRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();

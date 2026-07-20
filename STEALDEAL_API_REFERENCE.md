@@ -3,7 +3,7 @@
 > Code snapshot reviewed: 2026-07-20  
 > Audience: frontend developers and future backend maintainers  
 > Source of truth: controllers, DTOs, application services, mappings, repositories, middleware, and startup code under `src/Services`  
-> Coverage: all 60 controller actions currently present
+> Coverage: all 64 controller actions currently present
 
 ## 1. What This Project Is
 
@@ -181,14 +181,15 @@ Token response:
 
 ### 4.2 User-Management Endpoints
 
-These endpoints are admin-style operations but currently have no `[Authorize]` attributes.
+All endpoints in this controller require a bearer token with the `Admin` role.
 
 | Method | Path | Auth | Request | Success | Notes |
 |---|---|---|---|---|---|
-| `GET` | `/api/user` | Public (intended Admin) | query parameters | `200 PagedResult<UserResponse>` | Deleted users excluded; newest first. |
-| `GET` | `/api/user/{id}` | Public (intended Admin) | none | `200 UserDetailResponse` | `404` if missing. |
-| `PUT` | `/api/user/{id}` | Public (intended Admin) | `AdminUpdateUserRequest` | `200`, empty body | Publishes `identity.user.updated` through Identity outbox. |
-| `DELETE` | `/api/user/{id}` | Public (intended Admin) | none | `204` | Soft-deletes/deactivates user and publishes `identity.user.deleted`. |
+| `POST` | `/api/user` | Role: Admin | `AdminCreateUserRequest` | `201 UserDetailResponse` | Creates an active, verified account with a hashed password, selected roles, and initial trust score. Does not issue tokens or create an OTP. |
+| `GET` | `/api/user` | Role: Admin | query parameters | `200 PagedResult<UserResponse>` | Deleted users excluded; newest first. |
+| `GET` | `/api/user/{id}` | Role: Admin | none | `200 UserDetailResponse` | `404` if missing. |
+| `PUT` | `/api/user/{id}` | Role: Admin | `AdminUpdateUserRequest` | `200`, empty body | Updates the user's profile, account status, and roles. |
+| `DELETE` | `/api/user/{id}` | Role: Admin | none | `204` | Soft-deletes/deactivates the user. |
 
 `GET /api/user` query parameters:
 
@@ -205,6 +206,28 @@ Example:
 ```http
 GET /api/user?searchTerm=nguyen&role=Seller&accountStatus=active&page=1&pageSize=20
 ```
+
+### 4.3 Self-Service Account Endpoints
+
+These endpoints always derive the target user ID from the bearer token. They do not accept another user's ID.
+
+| Method | Path | Auth | Request | Success | Notes |
+|---|---|---|---|---|---|
+| `GET` | `/api/account/profile` | Bearer | none | `200 UserDetailResponse` | Returns the current active user's profile. |
+| `PUT` | `/api/account/profile` | Bearer | `UpdateMyProfileRequest` | `200 UserDetailResponse` | Replaces full name, phone, and avatar URL. Does not allow email, role, status, or trust-score changes. |
+| `PUT` | `/api/account/password` | Bearer | `ChangePasswordRequest` | `204` | Verifies the current password, changes it, revokes all active refresh tokens, and deletes the refresh cookie. |
+
+Profile-update example:
+
+```json
+{
+  "fullName": "An Nguyen",
+  "phone": "0900000000",
+  "avatarUrl": "https://cdn.example.com/users/an.jpg"
+}
+```
+
+Send `null` for `phone` or `avatarUrl` to clear that field. After a successful password change, the frontend should clear its cached access token and return to login. Existing access tokens remain valid until their normal expiry because access-token revocation is not implemented.
 
 ## 5. Store API
 
@@ -404,9 +427,12 @@ Fields marked `required` are non-nullable in the DTO or explicitly required by a
 | `LoginRequest` | `email: string` required; `password: string` required |
 | `VerifyEmailOtpRequest` | `email: string` required; `otp: string` required |
 | `ResendOtpRequest` | `email: string` required |
+| `AdminCreateUserRequest` | `email: string` required; `password: string` required, min 8; `fullName: string` required; `phone: string?`; `roles: ("Customer" | "Seller" | "Admin")[]` with at least one role |
 | `AdminUpdateUserRequest` | `fullName: string?`; `email: string?`; `phone: string?`; `isActive: boolean?`; `roles: ("Customer" | "Seller" | "Admin")[]?` |
+| `UpdateMyProfileRequest` | `fullName: string` required; `phone: string?`; `avatarUrl: string?` |
+| `ChangePasswordRequest` | `currentPassword: string` required; `newPassword: string` required, min 8 and different from current password |
 
-Admin role values are validated case-sensitively. User-update email is not normalized and is not checked for uniqueness by the application service.
+Admin role values are accepted case-insensitively and normalized to their canonical casing. User-update email is not normalized and is not checked for uniqueness by the application service.
 
 ### 9.2 Store Requests
 
@@ -550,7 +576,7 @@ Before treating the API as production-safe, account for these current-code facts
 5. Add a frontend proxy or backend CORS for Store, Order, Payment, and Notification.
 6. Do not assume list endpoints are paginated or filtered; only `GET /api/user` is paginated.
 7. Treat statuses and payment methods as backend-unrestricted strings for now; centralize temporary frontend constants so they are easy to change.
-8. Do not trust UI authorization alone. Several current admin/seller Store and Identity endpoints are actually public.
+8. Do not trust UI authorization alone. Several current admin/seller Store endpoints and Notification's test-create endpoint are actually public.
 9. Expect claim-only Store endpoints to fail poorly when no JWT is sent because `[Authorize]` is commented out.
 10. Do not assume creating an order reduces bag quantity or that payment updates the order.
 11. Do not assume the backend recalculates price from Store data; Order and Payment trust frontend amounts.

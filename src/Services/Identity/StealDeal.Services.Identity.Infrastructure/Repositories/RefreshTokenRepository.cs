@@ -25,9 +25,16 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
                 .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
         }
 
+        public Task<List<RefreshToken>> GetActiveRefreshTokensByUserIdAsync(Guid userId)
+        {
+            return _context.RefreshTokens
+                .Where(rt => rt.UserId == userId && !rt.IsRevoked && rt.ExpiresAt > DateTime.UtcNow)
+                .ToListAsync();
+        }
+
         public void Update(RefreshToken refreshToken)
         {
             _context.RefreshTokens.Update(refreshToken);
         }
     }
-} 
+}

@@ -1,6 +1,6 @@
 # StealDeal Backend Context Overview
 
-> Snapshot date: 2026-07-19  
+> Snapshot date: 2026-07-20
 > Purpose: this file is a context handoff document for future conversations. Before continuing backend work in a new context window, read this file first to quickly understand the current architecture, implemented services, completed flows, and known gaps.
 
 ## 1. Project Summary
@@ -137,10 +137,19 @@ Identity owns user accounts, roles, authentication tokens, email verification OT
 
 `UserController`:
 
+- All endpoints require the `Admin` role.
+- `POST /api/user`: creates an active, email-verified user with an admin-supplied password, roles, and initial trust score.
 - `GET /api/user`: paged/search/filter users.
 - `GET /api/user/{id}`: user detail.
 - `PUT /api/user/{id}`: admin-style update for full name, email, phone, active flag, and roles.
 - `DELETE /api/user/{id}`: deletes user through repository.
+
+`AccountController`:
+
+- All endpoints require authentication and derive the target user from the JWT.
+- `GET /api/account/profile`: gets the current user's complete profile.
+- `PUT /api/account/profile`: updates the current user's full name, phone, and avatar URL.
+- `PUT /api/account/password`: verifies and changes the password, revokes all active refresh tokens, and deletes the refresh cookie.
 
 ### Important Business Rules
 
@@ -153,6 +162,9 @@ Identity owns user accounts, roles, authentication tokens, email verification OT
 - Raw OTP is serialized into the outbox payload so Notification can create/send the OTP notification. This is acceptable for development, but should be hardened later.
 - Refresh tokens are generated raw once, then stored only as SHA256 hashes.
 - Refresh token rotation revokes the old token and stores a new one.
+- Admin-created accounts are immediately active and email-verified and do not receive an OTP or token pair.
+- Self-service profile updates cannot change email, roles, active/verified state, or trust score.
+- Authenticated password changes require the current password and force a new login by revoking refresh tokens.
 
 ### RabbitMQ Producer / Outbox
 
@@ -444,6 +456,8 @@ Implemented:
 - OTP hash storage.
 - JWT bearer validation across services.
 - HttpOnly refresh token cookie in Identity.
+- Admin role authorization on all Identity user-management endpoints.
+- Authenticated self-service profile and password endpoints.
 - Global exception middleware per service.
 
 Needs attention:
@@ -452,7 +466,6 @@ Needs attention:
 - Raw OTP is stored in the outbox payload and then in the notification body; acceptable for development, but should be hardened.
 - OTP rate-limiting fields exist but are not enforced.
 - Store authorization attributes are mostly commented out.
-- Admin endpoints in Identity `UserController` do not currently have explicit `[Authorize(Roles = "Admin")]`.
 - Cross-service ownership checks are incomplete for seller/store/order/payment flows.
 - Status values and roles are string-based.
 
@@ -496,6 +509,6 @@ Recommended next implementation sequence:
 
 1. Fix Payment config and ensure all services build.
 2. Add or verify migrations for Store, Order, and Payment.
-3. Harden authorization on Store and Identity admin endpoints.
+3. Harden authorization on Store endpoints.
 4. Add real Notification email sending for OTP.
 5. Start event-driven order flow: `order.created` -> Store reserve -> Payment create/process -> Order confirm/cancel.

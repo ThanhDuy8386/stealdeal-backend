@@ -164,7 +164,7 @@ This is a good direction for the surprise-bag product. The plan should now focus
 
 - `Payment.API/Program.cs` uses `GetConnectionString("IdentityDb")`, while `Payment.API/appsettings.json` has `StoreDb`. This must become `PaymentDb`.
 - Store authorization is mostly commented out.
-- Identity `UserController` admin-style endpoints are not protected with explicit admin authorization.
+- Identity `UserController` admin-style endpoints were not protected with explicit admin authorization. Resolved on 2026-07-20.
 - Role naming is inconsistent between product language (`Buyer`) and code (`Customer`).
 - Status values are free-form strings in multiple services.
 - OTP rate limiting fields exist but are not enforced.
@@ -558,4 +558,12 @@ Tasks:
 - Reviewed current source code and recalibrated this completion plan.
 - Verified all 5 service solutions build successfully.
 - Recorded build warnings and high-priority config/security gaps.
+
+### 2026-07-20
+
+- Protected all Identity user-management endpoints with the `Admin` role.
+- Added Admin user creation for active, verified test accounts.
+- Added authenticated account profile retrieval/update and password change.
+- Password change now revokes all active refresh tokens and requires a new login.
+- Deferred forgot-password and email-change verification flows.
 

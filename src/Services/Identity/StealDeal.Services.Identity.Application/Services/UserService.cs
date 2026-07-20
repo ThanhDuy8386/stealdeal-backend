@@ -15,11 +15,70 @@ namespace StealDeal.Services.Identity.Application.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IPasswordHasher _passwordHasher;
 
-        public UserService(IUserRepository userRepository, IUnitOfWork unitOfWork)
+        public UserService(
+            IUserRepository userRepository,
+            IUnitOfWork unitOfWork,
+            IPasswordHasher passwordHasher)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
+            _passwordHasher = passwordHasher;
+        }
+
+        public async Task<UserDetailResponse> CreateUser(AdminCreateUserRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+                throw new BadRequestException("Email is required.");
+
+            if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
+                throw new BadRequestException("Password must be at least 8 characters.");
+
+            if (string.IsNullOrWhiteSpace(request.FullName))
+                throw new BadRequestException("Full name is required.");
+
+            var roles = NormalizeRoles(request.Roles);
+            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+
+            if (!await _userRepository.IsEmailUniqueAsync(normalizedEmail))
+                throw new ConflictException("Email already exists.");
+
+            var user = new User
+            {
+                Email = normalizedEmail,
+                PasswordHash = _passwordHasher.Hash(request.Password),
+                FullName = request.FullName.Trim(),
+                Phone = NormalizeOptional(request.Phone),
+                IsEmailVerified = true,
+                IsActive = true,
+                IsDeleted = false
+            };
+
+            foreach (var role in roles)
+            {
+                user.UserRoles.Add(new UserRole
+                {
+                    UserId = user.Id,
+                    Role = role
+                });
+            }
+
+            user.UserTrustScore = new UserTrustScore
+            {
+                UserId = user.Id,
+                Score = 100,
+                TotalOrders = 0,
+                SuccessfulPickups = 0,
+                NoShowCount = 0,
+                DisputeCount = 0,
+                LastCalculatedAt = DateTime.UtcNow
+            };
+
+            await _userRepository.AddAsync(user);
+            await _unitOfWork.SaveChangesAsync();
+
+            return user.ToUserDetailResponse();
         }
 
         public async Task<PagedResult<UserResponse>> GetUsers(GetUsersQueryRequest request)
@@ -92,17 +151,10 @@ namespace StealDeal.Services.Identity.Application.Services
 
             if (request.Roles != null && request.Roles.Count > 0)
             {
-                var allowedRoles = new HashSet<string> { "Customer", "Seller", "Admin" };
-                foreach (var role in request.Roles)
-                {
-                    if (!allowedRoles.Contains(role))
-                    {
-                        throw new BadRequestException($"Invalid role: {role}");
-                    }
-                }
+                var roles = NormalizeRoles(request.Roles);
 
                 user.UserRoles.Clear();
-                foreach (var role in request.Roles)
+                foreach (var role in roles)
                 {
                     user.UserRoles.Add(new UserRole { UserId = user.Id, Role = role });
                 }
@@ -121,6 +173,46 @@ namespace StealDeal.Services.Identity.Application.Services
             }
             _userRepository.Delete(user);
             await _unitOfWork.SaveChangesAsync();
+        }
+
+        private static List<string> NormalizeRoles(List<string>? roles)
+        {
+            if (roles == null || roles.Count == 0)
+                throw new BadRequestException("At least one role is required.");
+
+            var normalizedRoles = new List<string>();
+
+            foreach (var role in roles)
+            {
+                string normalizedRole;
+
+                if (string.Equals(role?.Trim(), "Customer", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedRole = "Customer";
+                }
+                else if (string.Equals(role?.Trim(), "Seller", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedRole = "Seller";
+                }
+                else if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedRole = "Admin";
+                }
+                else
+                {
+                    throw new BadRequestException($"Invalid role: {role}");
+                }
+
+                if (!normalizedRoles.Contains(normalizedRole))
+                    normalizedRoles.Add(normalizedRole);
+            }
+
+            return normalizedRoles;
+        }
+
+        private static string? NormalizeOptional(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
     }
 }

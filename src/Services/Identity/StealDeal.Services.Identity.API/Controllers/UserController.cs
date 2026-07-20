@@ -1,17 +1,26 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Admin")]
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
         public UserController(IUserService userService)
         {
             _userService = userService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> CreateUser([FromBody] AdminCreateUserRequest request)
+        {
+            var result = await _userService.CreateUser(request);
+            return Ok(result);
         }
 
         [HttpGet]
