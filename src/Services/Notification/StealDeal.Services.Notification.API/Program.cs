@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using StealDeal.Services.Notification.API.Middlewares;
-using StealDeal.Services.Notification.Infrastructure.Configuration;
-using StealDeal.Services.Notification.Infrastructure.BackgroundService;
+using StealDeal.Services.Notification.Application.DTOs.Events;
+using StealDeal.Services.Notification.Application.EventHandlers;
+using StealDeal.Services.Notification.Application.Messaging;
 using StealDeal.Services.Notification.Application.Services;
 using StealDeal.Services.Notification.Application.Services.Interfaces;
 using StealDeal.Services.Notification.Domain.Interfaces;
+using StealDeal.Services.Notification.Infrastructure.BackgroundServices;
+using StealDeal.Services.Notification.Infrastructure.Configuration;
 using StealDeal.Services.Notification.Infrastructure.Persistence;
 using StealDeal.Services.Notification.Infrastructure.Repositories;
 
@@ -23,6 +26,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IIntegrationEventHandler<SendEmailVerificationOtpEvent>, SendEmailVerificationOtpEventHandler>();
 
 // ── RabbitMQ & Consumers ────────────────────────────────────
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));

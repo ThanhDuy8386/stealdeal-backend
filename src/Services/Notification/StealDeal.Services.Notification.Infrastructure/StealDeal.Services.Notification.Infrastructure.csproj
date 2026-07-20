@@ -12,7 +12,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Folder Include="BackgroundService\" />
+		<Folder Include="BackgroundServices\" />
 		<Folder Include="Configuration\" />
 		<Folder Include="Messaging\" />
 		<Folder Include="Repositories\" />
