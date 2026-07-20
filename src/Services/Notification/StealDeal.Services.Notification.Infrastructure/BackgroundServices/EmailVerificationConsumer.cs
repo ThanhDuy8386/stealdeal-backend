@@ -10,13 +10,12 @@ using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using StealDeal.Services.Notification.Application.DTOs.Events;
-using StealDeal.Services.Notification.Domain.Interfaces;
-using StealDeal.Services.Notification.Domain.Models;
+using StealDeal.Services.Notification.Application.Messaging;
 using StealDeal.Services.Notification.Infrastructure.Configuration;
 
-namespace StealDeal.Services.Notification.Infrastructure.BackgroundService
+namespace StealDeal.Services.Notification.Infrastructure.BackgroundServices
 {
-    public class EmailVerificationConsumer : Microsoft.Extensions.Hosting.BackgroundService
+    public class EmailVerificationConsumer : BackgroundService
     {
         private readonly RabbitMqSettings _rabbitSettings;
         private readonly EmailVerificationConsumerSettings _consumerSettings;
@@ -128,30 +127,17 @@ namespace StealDeal.Services.Notification.Infrastructure.BackgroundService
                     PropertyNameCaseInsensitive = true
                 });
 
-                if (@event != null)
+                if (@event == null)
                 {
-                    using var scope = _scopeFactory.CreateScope();
-                    var repo = scope.ServiceProvider.GetRequiredService<INotificationProfileRepository>();
-                    var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-
-                    var notification = new NotificationProfile
-                    {
-                        UserId = @event.UserId,
-                        Title = "Verify Email OTP",
-                        Body = $"Hello {@event.FullName}, your OTP is {@event.Otp}. It expires at {@event.ExpiresAt:g}.",
-                        Type = "EmailVerification",
-                        ActionUrl = null,
-                        ReferenceId = null,
-                        ReferenceType = null,
-                        IsRead = false,
-                        CreatedAt = DateTime.UtcNow
-                    };
-
-                    await repo.AddAsync(notification);
-                    await unitOfWork.SaveChangesAsync();
-
-                    _logger.LogInformation("Saved notification profile for user: {UserId}", @event.UserId);
+                    throw new InvalidOperationException("Message payload could not be deserialized into SendEmailVerificationOtpEvent.");
                 }
+
+                using var scope = _scopeFactory.CreateScope();
+                var handler = scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<SendEmailVerificationOtpEvent>>();
+
+                await handler.HandleAsync(@event, args.CancellationToken);
+
+                _logger.LogInformation("Processed email verification event for user: {UserId}", @event.UserId);
 
                 // Acknowledge the message
                 if (_channel != null)

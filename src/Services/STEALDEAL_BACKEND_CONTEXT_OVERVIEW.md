@@ -185,6 +185,65 @@ Event created by register/resend:
 - Publishes persistent JSON messages with `mandatory: true`.
 - Throws if the broker returns an unroutable message, allowing the outbox processor to retry later.
 
+Detailed `PublishAsync` flow:
+
+```text
+OutboxMessageProcessor
+  -> reads Pending OutboxMessage rows from Identity DB
+  -> maps each OutboxMessage to IntegrationMessage
+  -> calls IMessagePublisher.PublishAsync(message)
+  -> if PublishAsync succeeds: marks OutboxMessage as Processed
+  -> if PublishAsync throws: increments RetryCount and keeps/marks message retryable or Failed
+```
+
+`PublishAsync(IntegrationMessage message)` is the Identity service's RabbitMQ publishing boundary. It does not create business events itself. Business/application code first stores an `OutboxMessage` in the database, then `OutboxMessageProcessor` later converts that row into an `IntegrationMessage` and passes it into `PublishAsync`.
+
+The `IntegrationMessage` fields used by the publisher are:
+
+- `MessageId`: usually the `OutboxMessage.Id`; used as the AMQP message id and future idempotency key.
+- `ExchangeName`: currently `stealdeal.events`.
+- `ExchangeType`: currently `topic`.
+- `RoutingKey`: for OTP this is `identity.user.email-verification.requested`.
+- `EventType`: for OTP this is `SendEmailVerificationOtpEvent`.
+- `Payload`: JSON body, for OTP containing `UserId`, `Email`, `FullName`, `Otp`, `ExpiresAt`.
+- `OccurredAt`: original outbox creation time, converted to AMQP timestamp.
+
+Step-by-step behavior inside `PublishAsync`:
+
+1. `ValidateMessage(message)` checks that `MessageId`, `ExchangeName`, `ExchangeType`, `RoutingKey`, `EventType`, and `Payload` are present. If any required metadata is missing, it throws before touching RabbitMQ. This prevents silently publishing malformed events.
+2. `GetOrCreateConnectionAsync(cancellationToken)` returns the existing open RabbitMQ connection if possible. If there is no open connection, it uses `_connectionLock` (`SemaphoreSlim`) so only one caller creates/replaces the connection at a time. The `ConnectionFactory` has `AutomaticRecoveryEnabled` and `TopologyRecoveryEnabled` enabled.
+3. `CreateConfirmedChannelAsync(connection, cancellationToken)` creates a short-lived channel with publisher confirmations enabled. In RabbitMQ, publisher confirms mean `BasicPublishAsync` completes only after the broker acknowledges the publish at exchange level.
+4. `PublishAsync` subscribes to `channel.BasicReturnAsync` before publishing. This matters because when `mandatory: true` is used, RabbitMQ returns a message if the exchange exists but the routing key cannot route to any queue. In AMQP, the return can arrive before the publish ack, so the handler must be registered before `BasicPublishAsync`.
+5. `DeclareExchangeAsync(channel, message, cancellationToken)` declares the exchange from the message metadata. It uses `durable: true` and `autoDelete: false`. Exchange declaration is idempotent as long as the existing exchange has the same settings.
+6. `PublishOnChannelAsync(channel, message, cancellationToken)` serializes `message.Payload` to UTF-8 bytes, creates AMQP properties, and calls `BasicPublishAsync`.
+7. `CreateBasicProperties(message)` marks the message as persistent and sets metadata:
+   - `Persistent = true`: RabbitMQ should persist the message if the target queue is durable.
+   - `Type = message.EventType`: event type metadata for consumers/logging.
+   - `ContentType = "application/json"`: payload format.
+   - `MessageId = message.MessageId.ToString()`: stable id for tracing/idempotency.
+   - `Timestamp = message.OccurredAt`: original event creation time.
+8. `BasicPublishAsync` is called with:
+   - `exchange = message.ExchangeName`
+   - `routingKey = message.RoutingKey`
+   - `mandatory = true`
+   - `basicProperties = properties`
+   - `body = UTF-8 payload bytes`
+9. After publishing, `PublishAsync` checks whether `BasicReturnAsync` marked `messageReturned = true`. If yes, it throws `InvalidOperationException` because the broker accepted the publish but could not route the message to any queue.
+10. If no exception occurs, `PublishAsync` returns successfully. `OutboxMessageProcessor` then marks the outbox row as `Processed`.
+
+Important reliability meaning:
+
+- Publisher confirms answer: "Did RabbitMQ accept this publish at exchange level?"
+- `mandatory: true` plus `BasicReturnAsync` answers: "Was this message routable to at least one queue?"
+- Outbox retry handles failures by keeping the database message unprocessed until a later polling attempt.
+- The current guarantee is at-least-once delivery, not exactly-once delivery. Consumers should still be idempotent because duplicate publish/consume can happen during retries, crashes, or future scale-out.
+
+Current limitation:
+
+- `PublishBatchAsync` exists but `OutboxMessageProcessor` currently calls `PublishAsync` per message.
+- `OutboxMessageProcessor.GetPendingBatchAsync` does not currently use row-level locking, so multiple Identity instances could pick the same pending rows if the service is scaled out.
+- Consumer idempotency is not implemented yet in Notification.
+
 ## 5. Notification Service
 
 ### Responsibility
@@ -208,18 +267,139 @@ Notification owns in-app notification data and consumes RabbitMQ events. It curr
 
 ### RabbitMQ Consumer
 
-`EmailVerificationConsumer`:
+Notification RabbitMQ consuming was refactored so infrastructure concerns and business logic are separated:
 
-- Runs as a hosted background service.
-- Connects to RabbitMQ using `RabbitMqSettings`.
-- Declares the configured exchange.
-- Declares durable queue `notification.email-verification`.
-- Binds with key `identity.user.email-verification.#`.
-- Uses configured `prefetchCount`.
-- Deserializes `SendEmailVerificationOtpEvent`.
-- Creates a `NotificationProfile` with title `Verify Email OTP` and a body containing the OTP.
-- Acknowledges messages on success.
-- Negative-acknowledges without requeue on failure.
+- Infrastructure owns RabbitMQ connection, exchange/queue declaration, binding, consume loop, deserialization, and ack/nack.
+- Application owns event handling/business behavior through `IIntegrationEventHandler<TEvent>`.
+- `EmailVerificationConsumer` no longer creates `NotificationProfile` directly and no longer resolves repositories/unit of work directly.
+
+Current implementation pieces:
+
+- `EmailVerificationConsumer`:
+  - Hosted service in `Notification.Infrastructure.BackgroundServices`.
+  - Reads RabbitMQ broker settings from `RabbitMqSettings`.
+  - Reads queue/binding settings from `EmailVerificationConsumerSettings`.
+  - Declares exchange `stealdeal.events`, durable queue `notification.email-verification`, binding key `identity.user.email-verification.#`, and QoS/prefetch.
+  - Consumes messages with `autoAck: false`.
+  - Deserializes the payload into `SendEmailVerificationOtpEvent`.
+  - Creates a scoped DI lifetime and resolves `IIntegrationEventHandler<SendEmailVerificationOtpEvent>`.
+  - Calls the handler, then `BasicAckAsync` on success.
+  - Logs and `BasicNackAsync(..., requeue: false)` on failure.
+- `IIntegrationEventHandler<TEvent>`:
+  - Generic Application-layer abstraction for handling integration events.
+  - Defines `HandleAsync(TEvent @event, CancellationToken cancellationToken = default)`.
+  - Keeps RabbitMQ-specific code out of business handlers.
+- `SendEmailVerificationOtpEventHandler`:
+  - Application-layer handler for `SendEmailVerificationOtpEvent`.
+  - Maps the event into `CreateNotificationRequest`.
+  - Calls `INotificationService.CreateNotificationAsync(...)`.
+  - Produces the current in-app notification with title `Verify Email OTP`, type `EmailVerification`, and body containing the OTP.
+- `Program.cs`:
+  - Registers `INotificationService`.
+  - Registers `IIntegrationEventHandler<SendEmailVerificationOtpEvent>` to `SendEmailVerificationOtpEventHandler`.
+  - Registers `EmailVerificationConsumer` via `AddHostedService<EmailVerificationConsumer>()`.
+
+Current `EmailVerificationConsumer` flow:
+
+```text
+Notification API startup
+  -> Program.cs registers IIntegrationEventHandler<SendEmailVerificationOtpEvent>
+  -> Program.cs registers AddHostedService<EmailVerificationConsumer>()
+  -> ASP.NET Core host starts EmailVerificationConsumer
+  -> ExecuteAsync creates RabbitMQ connection/channel
+  -> consumer declares exchange, queue, binding, and QoS
+  -> BasicConsumeAsync starts listening with autoAck: false
+  -> OnMessageReceivedAsync handles each delivered message
+  -> consumer deserializes payload into SendEmailVerificationOtpEvent
+  -> consumer resolves IIntegrationEventHandler<SendEmailVerificationOtpEvent>
+  -> SendEmailVerificationOtpEventHandler maps event to CreateNotificationRequest
+  -> NotificationService creates and saves NotificationProfile
+  -> consumer BasicAckAsync on success, BasicNackAsync on failure
+```
+
+Startup behavior inside `ExecuteAsync`:
+
+1. Reads RabbitMQ connection settings from `RabbitMqSettings`:
+   - `HostName`
+   - `Port`
+   - `UserName`
+   - `Password`
+2. Reads consumer-specific settings from `EmailVerificationConsumerSettings`:
+   - `ExchangeName`, currently `stealdeal.events`
+   - `ExchangeType`, currently `topic`
+   - `QueueName`, currently `notification.email-verification`
+   - `BindingKey`, currently `identity.user.email-verification.#`
+   - `PrefetchCount`
+3. Creates a RabbitMQ `ConnectionFactory` with automatic connection and topology recovery enabled.
+4. Opens one RabbitMQ connection and one channel for this consumer.
+5. Declares the exchange with `durable: true` and `autoDelete: false`. This is idempotent and lets Notification start before Identity if needed.
+6. Declares durable queue `notification.email-verification` with:
+   - `durable: true`: queue survives broker restart.
+   - `exclusive: false`: not tied to only this connection.
+   - `autoDelete: false`: not deleted automatically when consumer disconnects.
+7. Binds the queue to the exchange using `identity.user.email-verification.#`. Because the exchange is `topic`, this binding catches routing keys beginning with `identity.user.email-verification.`.
+8. Configures QoS with `BasicQosAsync`:
+   - `prefetchSize = 0`
+   - `prefetchCount = _consumerSettings.PrefetchCount`
+   - `global = false`
+   This limits how many unacked messages RabbitMQ can deliver to this consumer at one time.
+9. Creates `AsyncEventingBasicConsumer` and attaches `OnMessageReceivedAsync` to `ReceivedAsync`.
+10. Calls `BasicConsumeAsync` with `autoAck: false`, meaning the consumer must explicitly ack/nack each message.
+11. Calls `Task.Delay(Timeout.Infinite, stoppingToken)` so the background service stays alive while RabbitMQ event callbacks process messages.
+
+Per-message behavior inside `OnMessageReceivedAsync`:
+
+1. Reads the raw body from `BasicDeliverEventArgs.Body`.
+2. Converts the body bytes to a UTF-8 JSON string.
+3. Logs routing key and delivery tag for observability.
+4. Deserializes JSON into `SendEmailVerificationOtpEvent` with case-insensitive property matching.
+5. Throws if the payload cannot be deserialized into the expected event type.
+6. Creates a scoped DI lifetime using `_scopeFactory.CreateScope()`. This is important because the consumer itself is a singleton hosted service, while handlers/application services/repositories are scoped.
+7. Resolves `IIntegrationEventHandler<SendEmailVerificationOtpEvent>`.
+8. Calls `handler.HandleAsync(@event, args.CancellationToken)`.
+9. Calls `BasicAckAsync(args.DeliveryTag, multiple: false)` if processing succeeds. This tells RabbitMQ the message can be removed from the queue.
+10. If any exception occurs, logs the error and calls `BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false)`. This rejects the message without putting it back into the same queue, avoiding an infinite retry loop for malformed messages.
+
+Application handler behavior for email verification:
+
+```text
+SendEmailVerificationOtpEventHandler.HandleAsync(...)
+  -> builds CreateNotificationRequest
+  -> UserId = event.UserId
+  -> Title = "Verify Email OTP"
+  -> Body = "Hello {FullName}, your OTP is {Otp}..."
+  -> Type = "EmailVerification"
+  -> calls INotificationService.CreateNotificationAsync(request)
+  -> NotificationService maps request to NotificationProfile and saves through repository + unit of work
+```
+
+How to add another Notification consumer/event later:
+
+1. Add the event DTO in `Notification.Application/DTOs/Events`, matching the producer's payload contract.
+2. Add an Application handler implementing `IIntegrationEventHandler<NewEvent>`.
+3. Put business behavior in the handler, usually by calling an existing Application service or adding a focused method to an Application service.
+4. Add consumer-specific settings in Infrastructure configuration if the new event needs its own queue/binding.
+5. Add a hosted RabbitMQ consumer for the new queue/binding. Keep it focused on RabbitMQ mechanics and delegate business work to `IIntegrationEventHandler<NewEvent>`.
+6. Register the handler and hosted consumer in `Notification.API/Program.cs`.
+
+Current extension rule:
+
+- If a new event can share the same queue and deserialize safely based on a known event type/routing key, consider a small dispatcher later.
+- If a new event has a separate queue/binding and only one handler, add a new simple consumer first. Avoid introducing a full event bus abstraction until multiple consumers start duplicating enough code to justify it.
+
+Shutdown behavior:
+
+- `StopAsync` closes the channel first.
+- Then it closes the connection.
+- Finally it calls `base.StopAsync(cancellationToken)`.
+
+Important reliability meaning:
+
+- `autoAck: false` prevents message loss when the consumer receives a message but fails before saving it.
+- Manual ack means the message is only removed after the DB save succeeds.
+- `requeue: false` avoids poison-message infinite loops, but because no DLQ is configured yet, failed messages may be dropped by RabbitMQ after nack.
+- `PrefetchCount` controls backpressure and prevents one consumer from receiving too many unprocessed messages.
+- The current consumer is not idempotent yet. If the same OTP event is delivered twice, it can create duplicate `NotificationProfile` rows.
 
 Current limitations:
 
