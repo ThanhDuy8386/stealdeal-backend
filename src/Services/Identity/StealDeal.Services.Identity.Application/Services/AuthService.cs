@@ -89,7 +89,7 @@ namespace StealDeal.Services.Identity.Application.Services
             return response;
         }
 
-        public async Task<TokenResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
+        public async Task<RegistrationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
         {
             ValidateRegisterRequest(request);
 
@@ -169,10 +169,18 @@ namespace StealDeal.Services.Identity.Application.Services
 
             await _userRepository.AddAsync(user);
 
-            var response = await IssueTokenPairAsync(user);
+            //var response = await IssueTokenPairAsync(user);
+            //await _unitOfWork.SaveChangesAsync();
+
+            //return response;
+
             await _unitOfWork.SaveChangesAsync();
 
-            return response;
+            return new RegistrationResponse
+            {
+                Message = "User registered successfully. Please verify your email.",
+                RequiresEmailVerification = true
+            };
         }
 
         public async Task VerifyEmailOtpAsync(VerifyEmailOtpRequest request, CancellationToken cancellationToken = default)
