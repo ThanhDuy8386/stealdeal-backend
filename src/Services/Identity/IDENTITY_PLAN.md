@@ -214,3 +214,19 @@ How to use:
 - [ ] Consume OTP messages.
 - [ ] Add `ProcessedMessages` table for consumer idempotency.
 - [ ] Send OTP email to user.
+
+## 2026-07-20 - Admin User Creation And Self-Service Account
+
+### Completed
+- [x] Protected all `UserController` endpoints with the `Admin` role.
+- [x] Added Admin user creation with an admin-supplied password, canonical roles, verified email, active state, and initial trust score.
+- [x] Added authenticated current-user profile retrieval and update endpoints.
+- [x] Limited self-service profile updates to full name, phone, and avatar URL.
+- [x] Added authenticated password change with current-password verification.
+- [x] Revoke all active refresh tokens and delete the refresh cookie after a password change.
+- [x] Updated the API reference and backend context document.
+
+### Deferred
+- [ ] Forgot-password/reset-password flow with a dedicated expiring reset token or OTP.
+- [ ] Email-change flow with uniqueness validation and email re-verification.
+- [ ] Immediate access-token revocation; current JWTs remain valid until expiration.
