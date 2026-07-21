@@ -14,15 +14,18 @@ namespace StealDeal.Services.Identity.Application.Services
     public class UserService : IUserService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IRoleRepository _roleRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPasswordHasher _passwordHasher;
 
         public UserService(
             IUserRepository userRepository,
+            IRoleRepository roleRepository,
             IUnitOfWork unitOfWork,
             IPasswordHasher passwordHasher)
         {
             _userRepository = userRepository;
+            _roleRepository = roleRepository;
             _unitOfWork = unitOfWork;
             _passwordHasher = passwordHasher;
         }
@@ -55,13 +58,10 @@ namespace StealDeal.Services.Identity.Application.Services
                 IsDeleted = false
             };
 
-            foreach (var role in roles)
+            var roleEntities = await _roleRepository.GetOrCreateRolesByNamesAsync(roles);
+            foreach (var role in roleEntities)
             {
-                user.UserRoles.Add(new UserRole
-                {
-                    UserId = user.Id,
-                    Role = role
-                });
+                user.Roles.Add(role);
             }
 
             user.UserTrustScore = new UserTrustScore
@@ -152,11 +152,12 @@ namespace StealDeal.Services.Identity.Application.Services
             if (request.Roles != null && request.Roles.Count > 0)
             {
                 var roles = NormalizeRoles(request.Roles);
+                var roleEntities = await _roleRepository.GetOrCreateRolesByNamesAsync(roles);
 
-                user.UserRoles.Clear();
-                foreach (var role in roles)
+                user.Roles.Clear();
+                foreach (var role in roleEntities)
                 {
-                    user.UserRoles.Add(new UserRole { UserId = user.Id, Role = role });
+                    user.Roles.Add(role);
                 }
             }
 

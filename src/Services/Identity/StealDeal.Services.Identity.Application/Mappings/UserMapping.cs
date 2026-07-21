@@ -20,7 +20,7 @@ namespace StealDeal.Services.Identity.Application.Mappings
                 IsEmailVerified = user.IsEmailVerified,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
-                Roles = user.UserRoles.Select(r => r.Role).ToList()
+                Roles = user.Roles.Select(r => r.Name).ToList()
             };
         }
 
@@ -55,7 +55,7 @@ namespace StealDeal.Services.Identity.Application.Mappings
                     DisputeCount = user.UserTrustScore.DisputeCount,
                     LastCalculatedAt = user.UserTrustScore.LastCalculatedAt
                 } : null,
-                Roles = user.UserRoles.Select(r => r.Role).ToList()
+                Roles = user.Roles.Select(r => r.Name).ToList()
             };
         }
     }
