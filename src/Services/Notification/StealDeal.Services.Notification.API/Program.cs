@@ -22,6 +22,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<INotificationProfileRepository, NotificationProfileRepository>();
+builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────

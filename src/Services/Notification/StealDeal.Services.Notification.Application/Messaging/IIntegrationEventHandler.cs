@@ -5,6 +5,6 @@ namespace StealDeal.Services.Notification.Application.Messaging
 {
     public interface IIntegrationEventHandler<in TEvent>
     {
-        Task HandleAsync(TEvent @event, CancellationToken cancellationToken = default);
+        Task HandleAsync(TEvent @event, IntegrationEventContext context, CancellationToken cancellationToken = default);
     }
 }

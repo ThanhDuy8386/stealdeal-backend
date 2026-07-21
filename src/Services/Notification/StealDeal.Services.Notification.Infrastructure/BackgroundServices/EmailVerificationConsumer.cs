@@ -134,8 +134,9 @@ namespace StealDeal.Services.Notification.Infrastructure.BackgroundServices
 
                 using var scope = _scopeFactory.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<SendEmailVerificationOtpEvent>>();
+                var context = CreateEventContext(args);
 
-                await handler.HandleAsync(@event, args.CancellationToken);
+                await handler.HandleAsync(@event, context, args.CancellationToken);
 
                 _logger.LogInformation("Processed email verification event for user: {UserId}", @event.UserId);
 
@@ -156,6 +157,26 @@ namespace StealDeal.Services.Notification.Infrastructure.BackgroundServices
                     await _channel.BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false);
                 }
             }
+        }
+
+        private IntegrationEventContext CreateEventContext(BasicDeliverEventArgs args)
+        {
+            var messageId = args.BasicProperties.MessageId;
+
+            if (!Guid.TryParse(messageId, out var parsedMessageId))
+            {
+                throw new InvalidOperationException("MessageId is missing or is not a valid Guid.");
+            }
+
+            return new IntegrationEventContext
+            {
+                MessageId = parsedMessageId,
+                ConsumerName = nameof(EmailVerificationConsumer),
+                EventType = string.IsNullOrWhiteSpace(args.BasicProperties.Type)
+                    ? nameof(SendEmailVerificationOtpEvent)
+                    : args.BasicProperties.Type,
+                RoutingKey = args.RoutingKey
+            };
         }
 
         public override async Task StopAsync(CancellationToken cancellationToken)
