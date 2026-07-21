@@ -12,6 +12,7 @@ namespace StealDeal.Services.Identity.Application.Services
     public class AuthService : IAuthService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IRoleRepository _roleRepository;
         private readonly IEmailVerificationRepository _emailVerificationRepository;
         private readonly IRefreshTokenRepository _refreshTokenRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -19,7 +20,8 @@ namespace StealDeal.Services.Identity.Application.Services
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly IOutboxMessageRepository _outboxMessageRepository;
         public AuthService(
-            IUserRepository userRepository, 
+            IUserRepository userRepository,
+            IRoleRepository roleRepository,
             IEmailVerificationRepository emailVerificationRepository,
             IRefreshTokenRepository refreshTokenRepository, 
             IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
@@ -27,6 +29,7 @@ namespace StealDeal.Services.Identity.Application.Services
             IOutboxMessageRepository outboxMessageRepository)
         {
             _userRepository = userRepository;
+            _roleRepository = roleRepository;
             _emailVerificationRepository = emailVerificationRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _unitOfWork = unitOfWork;
@@ -114,11 +117,8 @@ namespace StealDeal.Services.Identity.Application.Services
                 IsDeleted = false
             };
 
-            user.UserRoles.Add(new UserRole
-            {
-                UserId = user.Id,
-                Role = normalizedRole
-            });
+            var roles = await _roleRepository.GetOrCreateRolesByNamesAsync([normalizedRole]);
+            user.Roles.Add(roles.Single());
 
             user.UserTrustScore = new UserTrustScore
             {
@@ -275,7 +275,7 @@ namespace StealDeal.Services.Identity.Application.Services
 
         private async Task<TokenResponse> IssueTokenPairAsync(User user)
         {
-            var roles = user.UserRoles.Select(role => role.Role).ToList();
+            var roles = user.Roles.Select(role => role.Name).ToList();
             var accessTokenExpiresAt = _jwtTokenGenerator.GetAccessTokenExpiresAt();
             var refreshTokenExpiresAt = _jwtTokenGenerator.GetRefreshTokenExpiresAt();
             var accessToken = _jwtTokenGenerator.GenerateAccessToken(user, roles);

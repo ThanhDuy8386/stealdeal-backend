@@ -10,7 +10,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         }
 
         public DbSet<User> Users { get; set; }
-        public DbSet<UserRole> UserRoles { get; set; }
+        public DbSet<Role> Roles { get; set; }
         public DbSet<UserAddress> UserAddresses { get; set; }
         public DbSet<UserTrustScore> UserTrustScores { get; set; }
         public DbSet<TrustScoreEvent> TrustScoreEvents { get; set; }
@@ -34,18 +34,18 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.Property(e => e.AvatarUrl).HasMaxLength(1000);
             });
 
-            // UserRoles Configuration
-            modelBuilder.Entity<UserRole>(entity =>
+            // Roles Configuration
+            modelBuilder.Entity<Role>(entity =>
             {
                 entity.HasKey(e => e.Id);
-                entity.Property(e => e.Role).IsRequired().HasMaxLength(50);
-                
-                // Set foreign key to Users manually
-                entity.HasOne(e => e.User)
-                      .WithMany(r => r.UserRoles)
-                      .HasForeignKey(e => e.UserId)
-                      .OnDelete(DeleteBehavior.Cascade);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(50);
+                entity.HasIndex(e => e.Name).IsUnique();
             });
+
+            modelBuilder.Entity<User>()
+                .HasMany(u => u.Roles)
+                .WithMany(r => r.Users)
+                .UsingEntity(j => j.ToTable("UserRoles"));
 
             // UserAddresses Configuration
             modelBuilder.Entity<UserAddress>(entity =>
