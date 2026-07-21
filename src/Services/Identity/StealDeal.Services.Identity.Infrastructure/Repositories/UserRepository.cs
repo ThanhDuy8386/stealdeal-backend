@@ -48,7 +48,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
 
             if (!string.IsNullOrWhiteSpace(role))
             {
-                query = query.Where(u => u.UserRoles.Any(r => r.Role == role));
+                query = query.Where(u => u.Roles.Any(r => r.Name == role));
             }
 
             if (isActive.HasValue)
@@ -64,7 +64,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
                 .OrderByDescending(u => u.CreatedAt) // newest 
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Include(u => u.UserRoles) // load the roles too
+                .Include(u => u.Roles) // load the roles too
                 .ToListAsync();
 
             return (users, totalCount);
@@ -74,7 +74,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
         public async Task<User?> GetByEmailAsync(string email)
         {
             return await _context.Users
-                .Include(u => u.UserRoles)
+                .Include(u => u.Roles)
                 .Include(u => u.UserTrustScore)
                 .FirstOrDefaultAsync(u => u.Email == email);
         }
@@ -84,7 +84,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             // might add more include later if needed
             // like user trust score events
             return await _context.Users
-                .Include(u => u.UserRoles)
+                .Include(u => u.Roles)
                 .Include(u => u.UserAddresses)
                 .Include(u => u.UserTrustScore)
                 .FirstOrDefaultAsync(u => u.Id == id);
