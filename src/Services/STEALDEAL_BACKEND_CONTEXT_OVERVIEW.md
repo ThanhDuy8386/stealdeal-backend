@@ -299,12 +299,13 @@ Current implementation pieces:
   - Logs and `BasicNackAsync(..., requeue: false)` on failure.
 - `IIntegrationEventHandler<TEvent>`:
   - Generic Application-layer abstraction for handling integration events.
-  - Defines `HandleAsync(TEvent @event, CancellationToken cancellationToken = default)`.
+  - Defines `HandleAsync(TEvent @event, IntegrationEventContext context, CancellationToken cancellationToken = default)`.
   - Keeps RabbitMQ-specific code out of business handlers.
 - `SendEmailVerificationOtpEventHandler`:
   - Application-layer handler for `SendEmailVerificationOtpEvent`.
-  - Maps the event into `CreateNotificationRequest`.
-  - Calls `INotificationService.CreateNotificationAsync(...)`.
+  - Checks `ProcessedMessage` using `MessageId + ConsumerName`.
+  - Creates both `NotificationProfile` and `ProcessedMessage`.
+  - Saves both records in one unit-of-work commit.
   - Produces the current in-app notification with title `Verify Email OTP`, type `EmailVerification`, and body containing the OTP.
 - `Program.cs`:
   - Registers `INotificationService`.
@@ -368,22 +369,30 @@ Per-message behavior inside `OnMessageReceivedAsync`:
 5. Throws if the payload cannot be deserialized into the expected event type.
 6. Creates a scoped DI lifetime using `_scopeFactory.CreateScope()`. This is important because the consumer itself is a singleton hosted service, while handlers/application services/repositories are scoped.
 7. Resolves `IIntegrationEventHandler<SendEmailVerificationOtpEvent>`.
-8. Calls `handler.HandleAsync(@event, args.CancellationToken)`.
-9. Calls `BasicAckAsync(args.DeliveryTag, multiple: false)` if processing succeeds. This tells RabbitMQ the message can be removed from the queue.
-10. If any exception occurs, logs the error and calls `BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false)`. This rejects the message without putting it back into the same queue, avoiding an infinite retry loop for malformed messages.
+8. Builds `IntegrationEventContext` from RabbitMQ metadata, especially `MessageId`, `EventType`, `RoutingKey`, and consumer name.
+9. Calls `handler.HandleAsync(@event, context, args.CancellationToken)`.
+10. Calls `BasicAckAsync(args.DeliveryTag, multiple: false)` if processing succeeds. This tells RabbitMQ the message can be removed from the queue.
+11. If any exception occurs, logs the error and calls `BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false)`. This rejects the message without putting it back into the same queue, avoiding an infinite retry loop for malformed messages.
 
 Application handler behavior for email verification:
 
 ```text
 SendEmailVerificationOtpEventHandler.HandleAsync(...)
-  -> builds CreateNotificationRequest
-  -> UserId = event.UserId
-  -> Title = "Verify Email OTP"
-  -> Body = "Hello {FullName}, your OTP is {Otp}..."
-  -> Type = "EmailVerification"
-  -> calls INotificationService.CreateNotificationAsync(request)
-  -> NotificationService maps request to NotificationProfile and saves through repository + unit of work
+  -> checks ProcessedMessage by MessageId + ConsumerName
+  -> if already processed: return normally so the consumer can ack
+  -> creates NotificationProfile
+  -> creates ProcessedMessage
+  -> saves both through one UnitOfWork.SaveChangesAsync call
 ```
+
+Idempotency pattern with `ProcessedMessage`:
+
+- `ProcessedMessage` stores the RabbitMQ `MessageId`, `ConsumerName`, `EventType`, optional `AggregateId`, and `ProcessedAt`.
+- Notification configures a unique constraint on `(MessageId, ConsumerName)`.
+- Handler must commit business changes and the `ProcessedMessage` record together in the same DbContext/unit-of-work.
+- If the same message is delivered again, the handler returns before running business logic and the consumer acks it.
+- If two instances race, the unique constraint prevents both from committing. The losing transaction rolls back because business data and `ProcessedMessage` are saved together.
+- Later improvement: catch the unique-constraint `DbUpdateException` and treat it as duplicate success/ack instead of nack.
 
 How to add another Notification consumer/event later:
 
@@ -411,12 +420,11 @@ Important reliability meaning:
 - Manual ack means the message is only removed after the DB save succeeds.
 - `requeue: false` avoids poison-message infinite loops, but because no DLQ is configured yet, failed messages may be dropped by RabbitMQ after nack.
 - `PrefetchCount` controls backpressure and prevents one consumer from receiving too many unprocessed messages.
-- The current consumer is not idempotent yet. If the same OTP event is delivered twice, it can create duplicate `NotificationProfile` rows.
+- The email verification consumer now uses `ProcessedMessage` idempotency based on `MessageId + ConsumerName`.
 
 Current limitations:
 
 - It stores the OTP notification in the database but does not actually send email through SMTP, SendGrid, or another provider.
-- There is no processed-message/idempotency table yet.
 - There is no dead-letter queue yet.
 
 ## 6. Store Service

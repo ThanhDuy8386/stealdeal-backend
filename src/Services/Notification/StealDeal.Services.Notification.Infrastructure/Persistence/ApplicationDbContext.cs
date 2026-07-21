@@ -9,6 +9,7 @@ namespace StealDeal.Services.Notification.Infrastructure.Persistence
             : base(options) { }
 
         public DbSet<NotificationProfile> NotificationProfiles { get; set; }
+        public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -41,6 +42,30 @@ namespace StealDeal.Services.Notification.Infrastructure.Persistence
                     .HasDefaultValue(false);
 
                 entity.Property(n => n.CreatedAt)
+                    .IsRequired();
+            });
+
+            modelBuilder.Entity<ProcessedMessage>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+
+                entity.HasIndex(m => new { m.MessageId, m.ConsumerName })
+                    .IsUnique();
+
+                entity.Property(m => m.MessageId)
+                    .IsRequired();
+
+                entity.Property(m => m.ConsumerName)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.EventType)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.AggregateId);
+
+                entity.Property(m => m.ProcessedAt)
                     .IsRequired();
             });
         }

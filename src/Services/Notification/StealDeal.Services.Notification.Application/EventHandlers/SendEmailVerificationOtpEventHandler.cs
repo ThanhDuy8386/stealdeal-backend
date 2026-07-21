@@ -1,24 +1,46 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using StealDeal.Services.Notification.Application.DTOs.Events;
-using StealDeal.Services.Notification.Application.DTOs.Requests;
 using StealDeal.Services.Notification.Application.Messaging;
-using StealDeal.Services.Notification.Application.Services.Interfaces;
+using StealDeal.Services.Notification.Domain.Interfaces;
+using StealDeal.Services.Notification.Domain.Models;
 
 namespace StealDeal.Services.Notification.Application.EventHandlers
 {
     public class SendEmailVerificationOtpEventHandler : IIntegrationEventHandler<SendEmailVerificationOtpEvent>
     {
-        private readonly INotificationService _notificationService;
+        private const string ConsumerName = "EmailVerificationConsumer";
 
-        public SendEmailVerificationOtpEventHandler(INotificationService notificationService)
+        private readonly INotificationProfileRepository _notificationRepository;
+        private readonly IProcessedMessageRepository _processedMessageRepository;
+        private readonly IUnitOfWork _unitOfWork;
+
+        public SendEmailVerificationOtpEventHandler(
+            INotificationProfileRepository notificationRepository,
+            IProcessedMessageRepository processedMessageRepository,
+            IUnitOfWork unitOfWork)
         {
-            _notificationService = notificationService;
+            _notificationRepository = notificationRepository;
+            _processedMessageRepository = processedMessageRepository;
+            _unitOfWork = unitOfWork;
         }
 
-        public async Task HandleAsync(SendEmailVerificationOtpEvent @event, CancellationToken cancellationToken = default)
+        public async Task HandleAsync(
+            SendEmailVerificationOtpEvent @event,
+            IntegrationEventContext context,
+            CancellationToken cancellationToken = default)
         {
-            var request = new CreateNotificationRequest
+            var alreadyProcessed = await _processedMessageRepository.ExistsAsync(
+                context.MessageId,
+                ConsumerName);
+
+            if (alreadyProcessed)
+            {
+                return;
+            }
+
+            var notification = new NotificationProfile
             {
                 UserId = @event.UserId,
                 Title = "Verify Email OTP",
@@ -29,7 +51,19 @@ namespace StealDeal.Services.Notification.Application.EventHandlers
                 ReferenceType = null
             };
 
-            await _notificationService.CreateNotificationAsync(request);
+            var processedMessage = new ProcessedMessage
+            {
+                MessageId = context.MessageId,
+                ConsumerName = ConsumerName,
+                EventType = context.EventType,
+                AggregateId = @event.UserId,
+                ProcessedAt = DateTime.UtcNow
+            };
+
+            await _notificationRepository.AddAsync(notification);
+            await _processedMessageRepository.AddAsync(processedMessage);
+
+            await _unitOfWork.SaveChangesAsync();
         }
     }
 }
