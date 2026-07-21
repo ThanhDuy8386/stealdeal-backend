@@ -169,11 +169,6 @@ namespace StealDeal.Services.Identity.Application.Services
 
             await _userRepository.AddAsync(user);
 
-            //var response = await IssueTokenPairAsync(user);
-            //await _unitOfWork.SaveChangesAsync();
-
-            //return response;
-
             await _unitOfWork.SaveChangesAsync();
 
             return new RegistrationResponse

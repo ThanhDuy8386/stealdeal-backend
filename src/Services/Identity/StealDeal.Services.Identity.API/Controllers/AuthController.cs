@@ -21,12 +21,6 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
         public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
         {
             var response = await _authService.RegisterAsync(request, cancellationToken);
-            //SetRefreshTokenCookie(tokenResponse);
-            //return Ok(new AccessTokenResponse
-            //{
-            //    AccessToken = tokenResponse.AccessToken,
-            //    AccessTokenExpiresAt = tokenResponse.AccessTokenExpiresAt
-            //});
             return Ok(response);
         }
 
