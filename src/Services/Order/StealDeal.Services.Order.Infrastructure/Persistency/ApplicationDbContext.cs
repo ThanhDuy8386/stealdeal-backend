@@ -12,6 +12,8 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
         public DbSet<OrderProfile> OrderProfiles { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
         public DbSet<PickupDispute> PickupDisputes { get; set; }
+        public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -103,6 +105,38 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
                         json => JsonSerializer.Deserialize<List<string>>(json, (JsonSerializerOptions?)null) ?? new List<string>()
                     )
                     .HasColumnType("nvarchar(max)");
+            });
+
+            // OutboxMessages Configuration
+            modelBuilder.Entity<OutboxMessage>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.EventType).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Payload).IsRequired();
+            });
+
+            modelBuilder.Entity<ProcessedMessage>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+
+                entity.HasIndex(m => new { m.MessageId, m.ConsumerName })
+                    .IsUnique();
+
+                entity.Property(m => m.MessageId)
+                    .IsRequired();
+
+                entity.Property(m => m.ConsumerName)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.EventType)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.AggregateId);
+
+                entity.Property(m => m.ProcessedAt)
+                    .IsRequired();
             });
         }
     }
