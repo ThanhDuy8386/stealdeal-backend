@@ -8,6 +8,8 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
         Task<Role?> GetByNameAsync(string name);
         Task<List<Role>> GetAllAsync();
         Task<List<Role>> GetOrCreateRolesByNamesAsync(IEnumerable<string> roleNames);
+        Task<List<Role>> GetRolesByNamesAsync(IEnumerable<string> roleNames);
+        Task<bool> IsRoleAssignedAsync(Guid roleId);
         Task AddAsync(Role role);
         void Update(Role role);
         void Delete(Role role);

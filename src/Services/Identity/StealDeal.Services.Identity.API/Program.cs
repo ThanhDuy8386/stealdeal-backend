@@ -27,6 +27,7 @@ builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Out
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRoleRepository, RoleRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IEmailVerificationRepository, EmailVerificationRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
