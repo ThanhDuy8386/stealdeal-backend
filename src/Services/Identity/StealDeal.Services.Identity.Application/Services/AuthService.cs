@@ -97,7 +97,6 @@ namespace StealDeal.Services.Identity.Application.Services
             ValidateRegisterRequest(request);
 
             var normalizedEmail = NormalizeEmail(request.Email);
-            var normalizedRole = NormalizeRole(request.Role);
             var fullName = BuildFullName(request.FirstName, request.LastName);
 
             var isEmailUnique = await _userRepository.IsEmailUniqueAsync(normalizedEmail);
@@ -117,8 +116,9 @@ namespace StealDeal.Services.Identity.Application.Services
                 IsDeleted = false
             };
 
-            var roles = await _roleRepository.GetOrCreateRolesByNamesAsync([normalizedRole]);
-            user.Roles.Add(roles.Single());
+            var customerRole = await _roleRepository.GetByNameAsync("Customer")
+                ?? throw new InvalidOperationException("Required role 'Customer' is not configured in the database.");
+            user.Roles.Add(customerRole);
 
             user.UserTrustScore = new UserTrustScore
             {
@@ -312,11 +312,6 @@ namespace StealDeal.Services.Identity.Application.Services
             {
                 throw new BadRequestException("First name and last name are required.");
             }
-
-            if (string.IsNullOrWhiteSpace(request.Role))
-            {
-                throw new BadRequestException("Role is required.");
-            }
         }
 
         private static void ValidateLoginRequest(LoginRequest request)
@@ -330,21 +325,6 @@ namespace StealDeal.Services.Identity.Application.Services
         private static string NormalizeEmail(string email)
         {
             return email.Trim().ToLowerInvariant();
-        }
-
-        private static string NormalizeRole(string role)
-        {
-            if (string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Customer";
-            }
-
-            if (string.Equals(role, "Seller", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Seller";
-            }
-
-            throw new BadRequestException("Role must be Customer or Seller.");
         }
 
         private static string BuildFullName(string firstName, string lastName)

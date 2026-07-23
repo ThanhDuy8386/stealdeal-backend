@@ -7,7 +7,6 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
         Task<Role?> GetByIdAsync(Guid id);
         Task<Role?> GetByNameAsync(string name);
         Task<List<Role>> GetAllAsync();
-        Task<List<Role>> GetOrCreateRolesByNamesAsync(IEnumerable<string> roleNames);
         Task<List<Role>> GetRolesByNamesAsync(IEnumerable<string> roleNames);
         Task<bool> IsRoleAssignedAsync(Guid roleId);
         Task AddAsync(Role role);

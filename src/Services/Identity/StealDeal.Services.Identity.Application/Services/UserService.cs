@@ -58,7 +58,10 @@ namespace StealDeal.Services.Identity.Application.Services
                 IsDeleted = false
             };
 
-            var roleEntities = await _roleRepository.GetOrCreateRolesByNamesAsync(roles);
+            var roleEntities = await _roleRepository.GetRolesByNamesAsync(roles);
+            if (roleEntities.Count != roles.Count)
+                throw new BadRequestException("One or more roles do not exist.");
+
             foreach (var role in roleEntities)
             {
                 user.Roles.Add(role);
@@ -149,10 +152,12 @@ namespace StealDeal.Services.Identity.Application.Services
                 user.IsActive = request.IsActive.Value;
             }
 
-            if (request.Roles != null && request.Roles.Count > 0)
+            if (request.Roles != null)
             {
                 var roles = NormalizeRoles(request.Roles);
-                var roleEntities = await _roleRepository.GetOrCreateRolesByNamesAsync(roles);
+                var roleEntities = await _roleRepository.GetRolesByNamesAsync(roles);
+                if (roleEntities.Count != roles.Count)
+                    throw new BadRequestException("One or more roles do not exist.");
 
                 user.Roles.Clear();
                 foreach (var role in roleEntities)

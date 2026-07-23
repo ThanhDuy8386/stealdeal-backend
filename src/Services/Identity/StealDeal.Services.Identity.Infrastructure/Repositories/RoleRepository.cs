@@ -39,28 +39,6 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
             return await _context.Roles.FirstOrDefaultAsync(role => role.Name == name.Trim());
         }
 
-        public async Task<List<Role>> GetOrCreateRolesByNamesAsync(IEnumerable<string> roleNames)
-        {
-            var normalizedRoleNames = roleNames.Distinct().ToList();
-            var existingRoles = await _context.Roles
-                .Where(role => normalizedRoleNames.Contains(role.Name))
-                .ToListAsync();
-
-            var missingRoles = normalizedRoleNames
-                .Except(existingRoles.Select(role => role.Name))
-                .Select(roleName => new Role { Name = roleName })
-                .ToList();
-
-            if (missingRoles.Count > 0)
-            {
-                await _context.Roles.AddRangeAsync(missingRoles);
-                existingRoles.AddRange(missingRoles);
-            }
-
-            return existingRoles;
-        }
-
-        // helper method to get roles by names without creating new ones
         public async Task<List<Role>> GetRolesByNamesAsync(IEnumerable<string> roleNames)
         {
             var normalizedRoleNames = roleNames.Select(name => name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
