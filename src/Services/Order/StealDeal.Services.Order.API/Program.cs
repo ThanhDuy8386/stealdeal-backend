@@ -7,6 +7,9 @@ using StealDeal.Services.Order.API.Middlewares;
 using StealDeal.Services.Order.Application.Services;
 using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Domain.Interfaces;
+using StealDeal.Services.Order.Infrastructure.BackgroundServices;
+using StealDeal.Services.Order.Infrastructure.Configuration;
+using StealDeal.Services.Order.Infrastructure.Messaging;
 using StealDeal.Services.Order.Infrastructure.Persistency;
 using StealDeal.Services.Order.Infrastructure.Repositories;
 
@@ -15,15 +18,22 @@ var builder = WebApplication.CreateBuilder(args);
 // ── Database ──────────────────────────────────────────────
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("OrderDb")));
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
+builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IPickupDisputeRepository, PickupDisputeRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPickupDisputeService, PickupDisputeService>();
+
+builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
+builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");

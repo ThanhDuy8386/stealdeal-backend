@@ -4,19 +4,28 @@ Source context: `STEALDEAL_REVIEW_AND_PLAN.md`, lines 319-355.
 
 ## Goal
 
-Implement the Order side of the order-to-stock reservation flow using saga choreography.
+Implement the Order side of the order saga using choreography.
+
+Target service flow:
+
+```text
+Order -> Store -> Payment -> Notification (if needed)
+```
 
 Order service is both:
 
 - Producer: publishes `order.created` after an order is created.
-- Consumer: consumes Store stock result events and updates order state.
+- Producer: publishes `order.confirmed` after consuming `payment.completed`.
+- Producer: publishes `order.cancelled` after consuming `inventory.reservation_failed`, `payment.failed`, or a future user-cancel request.
+- Consumer: consumes Store/Payment result events and updates order state.
 
 Week 2 exit criteria:
 
-- Creating an order publishes `order.created`.
-- Store consumes `order.created` and reserves or rejects stock.
-- Order reacts to Store stock result.
-- Stock does not go negative in normal local testing.
+- Creating an order persists the order and publishes `order.created` through the outbox.
+- Store consumes `order.created` and either continues the flow toward Payment or publishes `inventory.reservation_failed`.
+- Payment publishes `payment.completed` or `payment.failed`.
+- Order reacts to `inventory.reservation_failed`, `payment.completed`, and `payment.failed`.
+- Failed message handling is logged clearly so errors are visible during local testing.
 
 ## Current Order Service State
 
@@ -33,27 +42,45 @@ Already present:
 
 Missing foundation pieces:
 
-- Shared integration event contracts.
-- Outbox write during order creation.
+- Local integration event DTOs in each service that participates in the saga.
+- Outbox write during order creation and during saga state changes that produce new events.
 - Background outbox publisher.
-- RabbitMQ consumer for Store stock result events.
-- Application handlers for stock reserved / stock reservation failed.
+- RabbitMQ consumer for inventory/payment result events.
+- Application handlers for order cancellation and confirmation.
 - Status transition rules aligned with saga states.
 - Registration of outbox, processed-message, publisher, and consumer services in `Program.cs`.
-- Operational conventions for exchange names, routing keys, retry policy, and dead-letter behavior.
+- Operational conventions for exchange names, routing keys, retry/logging behavior.
 
-## Event Contracts To Define
+## Event DTO Policy
 
-Recommended contract location for now:
+Do not add a shared contracts project for this milestone.
 
-- Prefer a small shared contracts project if Store and Order will both implement saga in the same sprint.
-- If speed matters more, temporarily duplicate DTOs in both services but keep event names, property names, and routing keys identical.
+Each service may define its own local DTO classes even if that duplicates code across services. The important rule is that event names, property names, and routing keys must stay identical across services.
 
-Order should publish:
+Minimum common event fields:
+
+- `messageId`
+- `occurredAtUtc`
+- `orderId`
+
+Optional but useful fields:
+
+- `correlationId`
+- `causationId`
+- `eventType`
+- `version`
+
+## Events
+
+### Order Service Produces
 
 ```text
 order.created
+order.confirmed
+order.cancelled
 ```
+
+`order.created` is published when an order is created.
 
 Suggested payload:
 
@@ -77,32 +104,47 @@ Suggested payload:
 }
 ```
 
-Order should consume:
+`order.confirmed` is published after Order consumes `payment.completed` and updates the order to `Confirmed`.
 
-```text
-store.stock.reserved
-store.stock.reservation-failed
-```
-
-Suggested `store.stock.reserved` payload:
+Suggested payload:
 
 ```json
 {
   "messageId": "guid",
   "occurredAtUtc": "2026-07-22T00:00:00Z",
   "orderId": "guid",
+  "paymentId": "guid",
+  "buyerId": "guid",
   "storeId": "guid",
-  "reservationId": "guid",
-  "items": [
-    {
-      "bagId": "guid",
-      "quantity": 1
-    }
-  ]
+  "totalAmount": 50000
 }
 ```
 
-Suggested `store.stock.reservation-failed` payload:
+`order.cancelled` is published after Order consumes `inventory.reservation_failed`, consumes `payment.failed`, or handles a future user-cancel request.
+
+Suggested payload:
+
+```json
+{
+  "messageId": "guid",
+  "occurredAtUtc": "2026-07-22T00:00:00Z",
+  "orderId": "guid",
+  "buyerId": "guid",
+  "storeId": "guid",
+  "reasonCode": "InventoryReservationFailed",
+  "reason": "QuantityRemaining is not enough."
+}
+```
+
+### Order Service Consumes
+
+```text
+inventory.reservation_failed
+payment.completed
+payment.failed
+```
+
+Suggested `inventory.reservation_failed` payload:
 
 ```json
 {
@@ -115,17 +157,47 @@ Suggested `store.stock.reservation-failed` payload:
 }
 ```
 
+Suggested `payment.completed` payload:
+
+```json
+{
+  "messageId": "guid",
+  "occurredAtUtc": "2026-07-22T00:00:00Z",
+  "orderId": "guid",
+  "paymentId": "guid",
+  "amount": 50000,
+  "paymentMethod": "Wallet"
+}
+```
+
+Suggested `payment.failed` payload:
+
+```json
+{
+  "messageId": "guid",
+  "occurredAtUtc": "2026-07-22T00:00:00Z",
+  "orderId": "guid",
+  "paymentId": "guid",
+  "reasonCode": "PaymentDeclined",
+  "reason": "Payment provider declined the transaction."
+}
+```
+
 ## RabbitMQ Topology
 
 Recommended simple topology:
 
 - Exchange: `stealdeal.events`
 - Exchange type: `topic`
-- Order publish routing key: `order.created`
-- Order consumer queue: `order.stock-results`
+- Order publish routing keys:
+  - `order.created`
+  - `order.confirmed`
+  - `order.cancelled`
+- Order consumer queue: `order.saga-events`
 - Order consumer bindings:
-  - `store.stock.reserved`
-  - `store.stock.reservation-failed`
+  - `inventory.reservation_failed`
+  - `payment.completed`
+  - `payment.failed`
 
 Outbox rows should store:
 
@@ -138,6 +210,33 @@ Outbox rows should store:
 - `RetryCount`
 - `ProcessedAt`
 - `Error`
+
+## Failure Handling Policy
+
+No DLQ is required for this milestone.
+
+If a consumed message fails during deserialize, idempotency check, handler execution, or database save:
+
+- Log the error with routing key, message id if available, consumer name, and exception details.
+- Do not publish a dead-letter message.
+- Keep the behavior simple and visible for local debugging.
+
+Recommended consumer behavior for now:
+
+- Ack duplicate messages after confirming they were already processed.
+- Ack malformed messages after logging, because reprocessing the same invalid payload will not fix it.
+- For handler/database failures, log clearly. If the current consumer implementation supports retry through `BasicNack(requeue: true)`, keep retries limited and visible; otherwise ack after logging to avoid an infinite local retry loop.
+
+Outbox publishing can still use bounded retry:
+
+- On publish success:
+  - set `Status = "Processed"` or `"Published"`;
+  - set `ProcessedAt = DateTime.UtcNow`;
+  - clear `Error`.
+- On publish failure:
+  - increment `RetryCount`;
+  - store `Error`;
+  - if `RetryCount >= Outbox:MaxRetryCount`, set `Status = "Failed"`.
 
 ## Order Creation Flow
 
@@ -175,14 +274,7 @@ Responsibilities:
 
 - Poll `OutboxMessages` using `Outbox:BatchSize`.
 - Publish pending messages to RabbitMQ.
-- On success:
-  - set `Status = "Processed"` or `"Published"`;
-  - set `ProcessedAt = DateTime.UtcNow`;
-  - clear `Error`.
-- On failure:
-  - increment `RetryCount`;
-  - store `Error`;
-  - if `RetryCount >= Outbox:MaxRetryCount`, set `Status = "Failed"`.
+- Update outbox status according to the failure handling policy.
 - Respect `Outbox:PollingIntervalSeconds`.
 
 Register dependencies in `Program.cs`:
@@ -191,31 +283,33 @@ Register dependencies in `Program.cs`:
 - RabbitMQ connection/channel abstraction
 - outbox publisher hosted service
 
-## Store Stock Result Consumer
+## Order Saga Consumer
 
 Add an infrastructure hosted service, for example:
 
 ```text
-StealDeal.Services.Order.Infrastructure/Messaging/StoreStockResultConsumerHostedService.cs
+StealDeal.Services.Order.Infrastructure/Messaging/OrderSagaConsumerHostedService.cs
 ```
 
 Responsibilities:
 
-- Declare/bind queue `order.stock-results`.
+- Declare/bind queue `order.saga-events`.
 - Consume:
-  - `store.stock.reserved`
-  - `store.stock.reservation-failed`
-- Deserialize event payload.
+  - `inventory.reservation_failed`
+  - `payment.completed`
+  - `payment.failed`
+- Deserialize event payload into local DTO classes.
 - Check `ProcessedMessages` by `(messageId, consumerName)`.
 - If already processed, ack message and stop.
 - Call application handler.
 - Save `ProcessedMessage`.
 - Ack only after DB changes are saved.
+- On any failure, log the problem clearly; do not use DLQ for this milestone.
 
 Consumer name recommendation:
 
 ```text
-Order.StoreStockResultConsumer
+Order.SagaConsumer
 ```
 
 ## Application Handlers
@@ -231,26 +325,37 @@ IOrderSagaService
 Suggested methods:
 
 ```csharp
-Task HandleStockReservedAsync(StoreStockReservedEvent integrationEvent);
-Task HandleStockReservationFailedAsync(StoreStockReservationFailedEvent integrationEvent);
+Task HandleInventoryReservationFailedAsync(InventoryReservationFailedEvent integrationEvent);
+Task HandlePaymentCompletedAsync(PaymentCompletedEvent integrationEvent);
+Task HandlePaymentFailedAsync(PaymentFailedEvent integrationEvent);
 ```
 
-`HandleStockReservedAsync`:
+`HandleInventoryReservationFailedAsync`:
 
 - Load order by `OrderId`.
-- If order does not exist, fail the message for retry or send to dead-letter.
-- If order is already `StockReserved`, `PaymentPending`, `Confirmed`, `Completed`, or `Cancelled`, treat as idempotent based on transition rules.
-- Change status from `Pending` to `StockReserved`.
-- Then either:
-  - set immediately to `PaymentPending` if payment flow is next; or
-  - leave as `StockReserved` until payment foundation is implemented.
-
-`HandleStockReservationFailedAsync`:
-
-- Load order by `OrderId`.
+- If order does not exist, log the error and treat the message as handled for this milestone.
 - If current status is `Pending`, set status to `Cancelled`.
-- Store cancellation/failure reason if a field is added later.
-- If order is already cancelled, treat as idempotent.
+- Create an `order.cancelled` outbox message with reason code `InventoryReservationFailed`.
+- If order is already `Cancelled`, treat as idempotent.
+- If order is already `Confirmed`, log a warning because inventory failure arrived too late.
+
+`HandlePaymentCompletedAsync`:
+
+- Load order by `OrderId`.
+- If order does not exist, log the error and treat the message as handled for this milestone.
+- If current status is `Pending` or `PaymentPending`, set status to `Confirmed`.
+- Create an `order.confirmed` outbox message.
+- If order is already `Confirmed`, treat as idempotent.
+- If order is already `Cancelled`, log a warning and do not confirm the order.
+
+`HandlePaymentFailedAsync`:
+
+- Load order by `OrderId`.
+- If order does not exist, log the error and treat the message as handled for this milestone.
+- If current status is `Pending` or `PaymentPending`, set status to `Cancelled`.
+- Create an `order.cancelled` outbox message with reason code `PaymentFailed`.
+- If order is already `Cancelled`, treat as idempotent.
+- If order is already `Confirmed`, log a warning because payment failure arrived too late.
 
 ## Status Flow
 
@@ -258,7 +363,6 @@ Target statuses from review plan:
 
 ```text
 Pending
-StockReserved
 PaymentPending
 Confirmed
 Cancelled
@@ -268,11 +372,10 @@ Disputed
 
 Recommended meaning:
 
-- `Pending`: order created, waiting for Store stock reservation.
-- `StockReserved`: Store has reserved stock for this order.
-- `PaymentPending`: stock is reserved and buyer/payment flow is waiting.
+- `Pending`: order created, waiting for Store/Payment saga outcome.
+- `PaymentPending`: Store has accepted/reserved inventory and payment is waiting, if Order chooses to track this intermediate state later.
 - `Confirmed`: payment succeeded and order is confirmed.
-- `Cancelled`: stock failed, buyer cancelled, seller/admin cancelled, or payment failed.
+- `Cancelled`: inventory reservation failed, payment failed, buyer cancelled, seller/admin cancelled, or future user cancel event was accepted.
 - `Completed`: pickup/delivery completed.
 - `Disputed`: order has an active pickup dispute.
 
@@ -284,8 +387,10 @@ Recommended immediate change:
 Example ownership:
 
 - Buyer/Seller/Admin API may request cancellation where allowed.
-- Store result consumer owns `Pending -> StockReserved` and `Pending -> Cancelled`.
-- Payment consumer later owns `PaymentPending -> Confirmed` and payment failure cancellation.
+- Order creation owns initial status `Pending`.
+- Inventory failure consumer owns `Pending -> Cancelled`.
+- Payment consumer owns `Pending/PaymentPending -> Confirmed` and `Pending/PaymentPending -> Cancelled`.
+- Future user cancel flow owns allowed cancellation transitions and publishes `order.cancelled`.
 - Pickup/dispute flow owns `Confirmed -> Completed` or `Confirmed -> Disputed`.
 
 ## Idempotency Strategy
@@ -302,30 +407,32 @@ Minimum strategy:
 
 Also make handlers status-aware:
 
-- Receiving `store.stock.reserved` twice should not corrupt state.
-- Receiving `store.stock.reservation-failed` twice should not corrupt state.
-- Receiving stock result for a cancelled/completed order should be explicitly handled.
+- Receiving `inventory.reservation_failed` twice should not corrupt state or publish repeated cancellation side effects.
+- Receiving `payment.completed` twice should not corrupt state or publish repeated confirmation side effects.
+- Receiving `payment.failed` twice should not corrupt state or publish repeated cancellation side effects.
+- Receiving a late conflicting event for a cancelled/confirmed order should be logged.
 
 ## Files To Add Or Update
 
 Domain:
 
 - Add order status constants or enum-like type.
-- Consider adding `CancellationReason`, `StockReservationId`, or `ReservedAt` later.
+- Consider adding `CancellationReason`, `CancelledAt`, `ConfirmedAt`, or `PaymentId` later.
 
 Application:
 
-- Add integration event DTOs if not using shared contracts project.
+- Add local integration event DTOs.
 - Add `IOrderSagaService`.
 - Add `OrderSagaService`.
-- Update `OrderService.CreateOrderAsync` to create outbox message atomically with order.
+- Update `OrderService.CreateOrderAsync` to create `order.created` outbox message atomically with order.
+- Update saga handlers to create `order.confirmed` and `order.cancelled` outbox messages atomically with order status updates.
 - Tighten `UpdateOrderStatusAsync` transition rules.
 
 Infrastructure:
 
 - Add RabbitMQ connection/publisher abstraction.
 - Add outbox publisher hosted service.
-- Add Store stock result consumer hosted service.
+- Add Order saga consumer hosted service.
 - Register `IOutboxMessageRepository` and `IProcessedMessageRepository`.
 - Add options classes for `RabbitMq` and `Outbox`.
 
@@ -342,43 +449,45 @@ Database:
 
 ## Implementation Order
 
-1. Finalize event names and payloads with Store service.
-2. Add integration event DTOs/contracts.
+1. Finalize event names and payloads with Store and Payment services.
+2. Add local integration event DTOs inside Order service.
 3. Add status constants and update order creation initial status.
 4. Register outbox and processed-message repositories in DI.
 5. Update `CreateOrderAsync` to write `order.created` outbox message.
 6. Implement RabbitMQ publisher abstraction.
 7. Implement outbox publisher hosted service.
 8. Implement `IOrderSagaService` handlers.
-9. Implement Store stock result consumer hosted service.
+9. Implement Order saga consumer hosted service for `inventory.reservation_failed`, `payment.completed`, and `payment.failed`.
 10. Add local test path:
     - create order;
     - verify outbox row;
-    - verify RabbitMQ message published;
-    - simulate Store stock reserved;
-    - verify order moves to `StockReserved` or `PaymentPending`;
-    - simulate Store stock reservation failed;
-    - verify order moves to `Cancelled`.
+    - verify RabbitMQ publishes `order.created`;
+    - simulate `inventory.reservation_failed`;
+    - verify order moves to `Cancelled` and `order.cancelled` is queued;
+    - simulate `payment.completed`;
+    - verify order moves to `Confirmed` and `order.confirmed` is queued;
+    - simulate `payment.failed`;
+    - verify order moves to `Cancelled` and `order.cancelled` is queued.
 
 ## Local Testing Checklist
 
 - RabbitMQ is running locally.
 - Order API starts without failing if RabbitMQ is unavailable, or fails fast intentionally with clear logs.
-- Creating an order creates one outbox row.
+- Creating an order creates one `order.created` outbox row.
 - Outbox worker publishes `order.created`.
 - Published payload has stable `messageId`.
 - Consumer creates one `ProcessedMessage` per consumed message.
-- Duplicate Store result events do not apply duplicate state changes.
-- Stock reservation failure cancels pending order.
-- Stock reservation success advances pending order.
+- Duplicate consumed events do not apply duplicate state changes.
+- `inventory.reservation_failed` cancels a pending order.
+- `payment.completed` confirms a pending/payment-pending order.
+- `payment.failed` cancels a pending/payment-pending order.
+- Consumer failures are logged clearly.
+- No DLQ setup is required for this milestone.
 - Postman can still test CRUD endpoints through Swagger-imported collection.
 
 ## Open Questions
 
-1. Should Order set status to `StockReserved` first, or immediately move to `PaymentPending` after receiving `store.stock.reserved`?
-2. Will there be a shared contracts project for integration events, or should Order and Store duplicate contracts for now?
-3. What exact event envelope should all services use: `messageId`, `correlationId`, `causationId`, `occurredAtUtc`, `eventType`, `version`?
-4. Should `order.created` include price snapshots from the request as-is, or should Order validate snapshots against Store/Product data before publishing?
-5. What should happen if Store returns `stock.reserved` after the buyer already cancelled the order?
-6. Do we need dead-letter queues in Week 2, or is retry + `Failed` outbox/consumer logging enough for the capstone milestone?
-
+1. Should Order track `PaymentPending`, or keep the status as `Pending` until `payment.completed` / `payment.failed` arrives?
+2. What exact event envelope should all services use: `messageId`, `correlationId`, `causationId`, `occurredAtUtc`, `eventType`, `version`?
+3. Should `order.created` include price snapshots from the request as-is, or should Order validate snapshots against Store/Product data before publishing?
+4. What should happen if Payment returns `payment.completed` after the buyer already cancelled the order?
