@@ -14,6 +14,7 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
         public DbSet<SurpriseBag> SurpriseBags { get; set; }
         public DbSet<StoreReview> StoreReviews { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -106,6 +107,30 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
                 entity.Property(e => e.Error).HasMaxLength(2000);
 
                 entity.HasIndex(e => e.Status); // query pending messages
+            });
+
+            modelBuilder.Entity<ProcessedMessage>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+
+                entity.HasIndex(m => new { m.MessageId, m.ConsumerName })
+                    .IsUnique();
+
+                entity.Property(m => m.MessageId)
+                    .IsRequired();
+
+                entity.Property(m => m.ConsumerName)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.EventType)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(m => m.AggregateId);
+
+                entity.Property(m => m.ProcessedAt)
+                    .IsRequired();
             });
         }
     }

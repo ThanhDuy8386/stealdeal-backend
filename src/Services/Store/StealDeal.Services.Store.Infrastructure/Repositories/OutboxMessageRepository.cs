@@ -1,26 +1,36 @@
-﻿using StealDeal.Services.Store.Domain.Interfaces;
+using Microsoft.EntityFrameworkCore;
+using StealDeal.Services.Store.Domain.Interfaces;
 using StealDeal.Services.Store.Domain.Models;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using StealDeal.Services.Store.Infrastructure.Persistence;
 
 namespace StealDeal.Services.Store.Infrastructure.Repositories
 {
     public class OutboxMessageRepository : IOutboxMessageRepository
     {
-        public Task AddAsync(OutboxMessage entity)
+        private readonly ApplicationDbContext _context;
+
+        public OutboxMessageRepository(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
         }
 
-        public Task<List<OutboxMessage>> GetPendingBatchAsync(int batchSize)
+        public async Task AddAsync(OutboxMessage entity)
         {
-            throw new NotImplementedException();
+            await _context.OutboxMessages.AddAsync(entity);
+        }
+
+        public async Task<List<OutboxMessage>> GetPendingBatchAsync(int batchSize)
+        {
+            return await _context.OutboxMessages
+                .Where(message => message.Status == "Pending")
+                .OrderBy(message => message.CreatedAt)
+                .Take(batchSize)
+                .ToListAsync();
         }
 
         public void Update(OutboxMessage entity)
         {
-            throw new NotImplementedException();
+            _context.OutboxMessages.Update(entity);
         }
     }
 }

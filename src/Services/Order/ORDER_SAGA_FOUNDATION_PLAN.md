@@ -27,6 +27,49 @@ Week 2 exit criteria:
 - Order reacts to `inventory.reservation_failed`, `payment.completed`, and `payment.failed`.
 - Failed message handling is logged clearly so errors are visible during local testing.
 
+## Implemented Notes
+
+Current implemented flow:
+
+```text
+Order creates order -> Order outbox publishes order.created -> Store consumes order.created
+```
+
+Order Service:
+
+- `OrderService.CreateOrderAsync` now creates the order and an `order.created` outbox record in the same commit.
+- Order outbox background processor publishes pending outbox rows to RabbitMQ.
+- Outbox row is marked processed only after RabbitMQ confirms the message and it is routed to at least one queue.
+- Important files:
+  - `OrderService.cs`
+  - `CreateOrderEvent.cs`
+  - `IntegrationMessage.cs`
+  - `OutboxMessageProcessor.cs`
+  - `RabbitMqMessagePublisher.cs`
+
+Store Service:
+
+- `CreatedOrderConsumer` consumes `order.created`.
+- `CreateOrderEventHandler` owns the business logic for inventory reservation.
+- Store checks requested `SurpriseBagId` and `Quantity`.
+- Stock reservation uses atomic conditional update so concurrent orders cannot both reserve the same remaining quantity.
+- If reservation succeeds:
+  - Store decreases `QuantityRemaining`;
+  - inserts `ProcessedMessage`;
+  - inserts `inventory.reserved` outbox row for Payment service;
+  - commits all changes together.
+- If reservation fails:
+  - Store inserts `ProcessedMessage`;
+  - inserts `inventory.reservation_failed` outbox row for Order service;
+  - commits both changes together.
+- Important files:
+  - `CreatedOrderConsumer.cs`
+  - `CreateOrderEventHandler.cs`
+  - `InventoryReservedEvent.cs`
+  - `InventoryReservationFailedEvent.cs`
+  - `SurpriseBagRepository.TryReserveQuantityAsync`
+  - `UnitOfWork.ExecuteInTransactionAsync`
+
 ## Current Order Service State
 
 Already present:

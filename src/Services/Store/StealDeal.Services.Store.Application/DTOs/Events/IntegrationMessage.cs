@@ -11,3 +11,6 @@ namespace StealDeal.Services.Store.Application.DTOs.Events
         public DateTime OccurredAt { get; set; }
     }
 }
+//Template của message khi gửi vào queue.
+//MessageId là outbox.ID
+//Payload là Json của event.
