@@ -53,5 +53,29 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
         {
             _context.SurpriseBags.Remove(entity);
         }
+
+        public async Task<bool> TryReserveQuantityAsync(
+            Guid surpriseBagId,
+            Guid storeId,
+            int quantity,
+            CancellationToken cancellationToken = default)
+        {
+            var affectedRows = await _context.SurpriseBags
+                .Where(x =>
+                    x.Id == surpriseBagId &&
+                    x.StoreId == storeId &&
+                    x.QuantityRemaining >= quantity)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(
+                            bag => bag.QuantityRemaining,
+                            bag => bag.QuantityRemaining - quantity)
+                        .SetProperty(
+                            bag => bag.UpdatedAt,
+                            DateTime.UtcNow),
+                    cancellationToken);
+
+            return affectedRows == 1;
+        }
     }
 }

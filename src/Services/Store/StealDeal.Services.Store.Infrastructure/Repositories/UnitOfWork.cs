@@ -17,5 +17,22 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
         {
             return _context.SaveChangesAsync();
         }
+
+        public async Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                await action();
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
     }
 }
