@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
+using StealDeal.Services.Order.Application.DTOs.Events;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Application.Exceptions;
@@ -16,11 +18,16 @@ namespace StealDeal.Services.Order.Application.Services
     {
         private readonly IOrderRepository _orderRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IOutboxMessageRepository _outboxMessageRepository;
 
-        public OrderService(IOrderRepository orderRepository, IUnitOfWork unitOfWork)
+        public OrderService(
+            IOrderRepository orderRepository,
+            IUnitOfWork unitOfWork,
+            IOutboxMessageRepository outboxMessageRepository)
         {
             _orderRepository = orderRepository;
             _unitOfWork = unitOfWork;
+            _outboxMessageRepository = outboxMessageRepository;
         }
 
         public async Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request)
@@ -33,6 +40,31 @@ namespace StealDeal.Services.Order.Application.Services
 
             var order = request.ToEntity(userId);
 
+            var payload = JsonSerializer.Serialize(new CreateOrderEvent
+            {
+                OrderId = order.Id,
+                UserId = order.UserId,
+                StoreId = order.StoreId,
+                TotalAmount = order.TotalAmount,
+                CreatedAt = order.CreatedAt,
+                Items = order.Items.Select(
+                    item => new OrderItemDto
+                    {
+                        SurpriseBagId = item.BagId,
+                        Quantity = item.Quantity
+                    }
+                ).ToList()
+            });
+
+            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            {
+                ExchangeName = "stealdeal.events",
+                ExchangeType = "topic",
+                RoutingKey = "order.created",
+                EventType = "OrderCreatedEvent",
+                Payload = payload,
+                Status = "Pending"
+            });
             await _orderRepository.AddAsync(order);
             await _unitOfWork.SaveChangesAsync();
 
