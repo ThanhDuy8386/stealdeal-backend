@@ -137,8 +137,9 @@ namespace StealDeal.Services.Store.Application.EventHandlers
                         $"Surprise bag '{item.SurpriseBagId}' no longer has enough stock.");
                 }
             }
-
+            //sau khi trừ hàng thành công, add record vào outbox message table để notify cho Payment xử lý
             await _outboxMessageRepository.AddAsync(CreateInventoryReservedOutboxMessage(@event, requestedItems));
+            //lưu vào processed message table, đảm bảo tính idempotency
             await AddProcessedMessageAsync(@event, context);
         }
 
@@ -152,10 +153,10 @@ namespace StealDeal.Services.Store.Application.EventHandlers
             {
                 return;
             }
-
+            //add vào outbox, để notify cho Order xử lý event trừ hàng thất bại
             await _outboxMessageRepository.AddAsync(
                 CreateInventoryReservationFailedOutboxMessage(@event, reasonCode, reason));
-
+            //lưu vào processed message table, đảm bảo tính idempotency
             await AddProcessedMessageAsync(@event, context);
         }
 

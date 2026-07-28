@@ -12,6 +12,7 @@ using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
 using StealDeal.Services.Store.Infrastructure.BackgroundServices;
 using StealDeal.Services.Store.Infrastructure.Configuration;
+using StealDeal.Services.Store.Infrastructure.Messaging;
 using StealDeal.Services.Store.Infrastructure.Persistence;
 using StealDeal.Services.Store.Infrastructure.Repositories;
 
@@ -44,7 +45,9 @@ builder.Services.AddScoped<IIntegrationEventHandler<CreateOrderEvent>, CreateOrd
 builder.Services.Configure<OrderCreatedConsummerSettings>(
     builder.Configuration.GetSection("OrderCreatedConsumer"));
 
+builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<CreatedOrderConsumer>();
+builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
