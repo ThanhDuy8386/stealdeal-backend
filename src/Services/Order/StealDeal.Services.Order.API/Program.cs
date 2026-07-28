@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StealDeal.Services.Order.API.Middlewares;
+using StealDeal.Services.Order.Application.DTOs.Events;
+using StealDeal.Services.Order.Application.EventHandlers;
+using StealDeal.Services.Order.Application.Messaging;
 using StealDeal.Services.Order.Application.Services;
 using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Domain.Interfaces;
@@ -21,19 +24,25 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
+builder.Services.Configure<OrderStatusConsumerSettings>(builder.Configuration.GetSection("OrderStatusConsumer"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IPickupDisputeRepository, PickupDisputeRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
+builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPickupDisputeService, PickupDisputeService>();
+builder.Services.AddScoped<IIntegrationEventHandler<InventoryReservationFailedEvent>, OrderStatusEventHandler>();
+builder.Services.AddScoped<IIntegrationEventHandler<PaymentFailedEvent>, OrderStatusEventHandler>();
+builder.Services.AddScoped<IIntegrationEventHandler<PaymentCompletedEvent>, OrderStatusEventHandler>();
 
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<OutboxMessageProcessor>();
+builder.Services.AddHostedService<OrderStatusConsumer>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");

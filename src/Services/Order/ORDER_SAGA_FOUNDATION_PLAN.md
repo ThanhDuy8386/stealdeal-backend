@@ -29,34 +29,47 @@ Week 2 exit criteria:
 
 ## Implemented Notes
 
-Current implemented flow:
+Current tested flow:
 
 ```text
-Order creates order -> Order outbox publishes order.created -> Store consumes order.created
+Order -> Store -> Payment later
+       \-> Order status update on reservation/payment failure
 ```
 
 Order Service:
 
-- `OrderService.CreateOrderAsync` now creates the order and an `order.created` outbox record in the same commit.
-- Order outbox background processor publishes pending outbox rows to RabbitMQ.
-- Outbox row is marked processed only after RabbitMQ confirms the message and it is routed to at least one queue.
+- `OrderService.CreateOrderAsync` creates a new order with default status `Pending`.
+- The same create flow also inserts an `order.created` outbox row in the same DB commit.
+- `OutboxMessageProcessor` publishes pending outbox rows to RabbitMQ.
+- Outbox rows are marked `Processed` only after RabbitMQ confirms publish and the message routes to at least one queue.
+- `OrderStatusConsumer` consumes status-result events from queue `order.saga-events`.
+- `OrderStatusEventHandler` updates order status and inserts `ProcessedMessage` in the same commit.
+- Current status updates:
+  - `inventory.reservation_failed` -> `InventoryReservationFailed`
+  - `payment.failed` -> `PaymentFailed`
+  - `payment.completed` -> `Confirmed`
 - Important files:
   - `OrderService.cs`
   - `CreateOrderEvent.cs`
   - `IntegrationMessage.cs`
   - `OutboxMessageProcessor.cs`
   - `RabbitMqMessagePublisher.cs`
+  - `OrderStatusConsumer.cs`
+  - `OrderStatusEventHandler.cs`
+  - `InventoryReservationFailedEvent.cs`
+  - `PaymentFailedEvent.cs`
+  - `PaymentCompletedEvent.cs`
 
 Store Service:
 
 - `CreatedOrderConsumer` consumes `order.created`.
 - `CreateOrderEventHandler` owns the business logic for inventory reservation.
 - Store checks requested `SurpriseBagId` and `Quantity`.
-- Stock reservation uses atomic conditional update so concurrent orders cannot both reserve the same remaining quantity.
+- Stock reservation uses atomic conditional update to avoid race condition on `QuantityRemaining`.
 - If reservation succeeds:
   - Store decreases `QuantityRemaining`;
   - inserts `ProcessedMessage`;
-  - inserts `inventory.reserved` outbox row for Payment service;
+  - inserts `inventory.reserved` outbox row for Payment service to consume later;
   - commits all changes together.
 - If reservation fails:
   - Store inserts `ProcessedMessage`;
@@ -69,6 +82,14 @@ Store Service:
   - `InventoryReservationFailedEvent.cs`
   - `SurpriseBagRepository.TryReserveQuantityAsync`
   - `UnitOfWork.ExecuteInTransactionAsync`
+
+Tested cases:
+
+- Create order successfully publishes `order.created`.
+- Store reserves inventory successfully and publishes `inventory.reserved`.
+- Store reservation failure publishes `inventory.reservation_failed`.
+- Order consumes `inventory.reservation_failed` and updates order status.
+- Order consumer is ready for future `payment.failed` and `payment.completed` events.
 
 ## Current Order Service State
 
