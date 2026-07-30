@@ -79,7 +79,7 @@ var app = builder.Build();
 
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors("FrontendPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
