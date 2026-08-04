@@ -2,10 +2,14 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using StealDeal.Services.Payment.API.Middlewares;
 using StealDeal.Services.Payment.Application.Services;
 using StealDeal.Services.Payment.Application.Services.Interfaces;
 using StealDeal.Services.Payment.Domain.Interfaces;
+using StealDeal.Services.Payment.Infrastructure.BackgroundServices;
+using StealDeal.Services.Payment.Infrastructure.Configuration;
+using StealDeal.Services.Payment.Infrastructure.Messaging;
 using StealDeal.Services.Payment.Infrastructure.Persistence;
 using StealDeal.Services.Payment.Infrastructure.Repositories;
 
@@ -18,11 +22,18 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IRefundRepository, RefundRepository>();
+builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
+builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
+
+builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
+builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
+builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
@@ -47,15 +58,48 @@ builder.Services.AddAuthorization();
 
 // ── Controllers & OpenAPI ─────────────────────────────────
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "StealDeal Order API",
+        Version = "v1"
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = JwtBearerDefaults.AuthenticationScheme,
+        BearerFormat = "JWT",
+        Description = "Enter a valid JWT access token."
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document, "JWT")] = []
+    });
+});
 
 // ─────────────────────────────────────────────────────────
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger(options =>
+    {
+        options.PreSerializeFilters.Add((swaggerDoc, httpReq) =>
+        {
+            swaggerDoc.Servers = [new OpenApiServer { Url = $"{httpReq.Scheme}://{httpReq.Host.Value}" }];
+        });
+    });
+    app.UseSwaggerUI();
 }
+
+// if (app.Environment.IsDevelopment())
+// {
+//     app.MapOpenApi();
+// }
 
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 app.UseHttpsRedirection();

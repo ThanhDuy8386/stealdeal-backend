@@ -13,11 +13,16 @@ namespace StealDeal.Services.Payment.Domain.Models
 
         public string PaymentMethod { get; set; } = null!; // Ví dụ: "VNPAY", "MOMO", "COD", "STRIPE"
         public string? GatewayRef { get; set; } // Mã tham chiếu từ cổng thanh toán, cho phép null nếu chưa thanh toán hoặc thanh toán COD
+        public string? CheckoutUrl { get; set; }
+        public string? GatewayTransactionNo { get; set; }
+        public string? GatewayResponseCode { get; set; }
+        public string? GatewayTransactionStatus { get; set; }
 
         public string Status { get; set; } = null!; // Ví dụ: "Pending", "Success", "Failed"
         public string? FailureReason { get; set; } // Lý do thất bại (nếu có), để nullable vì giao dịch thành công sẽ không có trường này
 
         public DateTime? PaidAt { get; set; } // Thời điểm thanh toán thành công, để nullable vì lúc mới tạo đơn chưa thanh toán ngay
+        public DateTime? ExpiresAt { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

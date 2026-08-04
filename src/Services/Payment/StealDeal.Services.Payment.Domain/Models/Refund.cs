@@ -13,8 +13,12 @@ namespace StealDeal.Services.Payment.Domain.Models
         public string Reason { get; set; } = null!;
 
         public string Status { get; set; } = null!; // Ví dụ: "Pending", "Processed", "Failed"
+        public string? GatewayRefundRef { get; set; }
+        public string? GatewayResponseCode { get; set; }
+        public string? FailureReason { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? ProcessedAt { get; set; } // Cho phép null khi yêu cầu hoàn tiền đang chờ xử lý
 
         // Navigation properties
