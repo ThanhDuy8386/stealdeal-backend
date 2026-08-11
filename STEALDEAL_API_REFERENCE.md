@@ -240,32 +240,31 @@ create/update/delete endpoints.
 |---|---|---|---|---|
 | `GET` | `/api/categories` | Public | none | `200 CategoryResponse[]` |
 | `GET` | `/api/categories/{slug}` | Public | none | `200 CategoryResponse` |
-| `POST` | `/api/categories` | Admin `[bypass]` | `CreateCategoryRequest` | `201 CategoryResponse` |
-| `PUT` | `/api/categories/{id}` | Admin `[bypass]` | `UpdateCategoryRequest` | `200 CategoryResponse` |
-| `DELETE` | `/api/categories/{id}` | Admin `[bypass]` | none | `204 NoContent` |
+| `POST` | `/api/categories` | Admin | `CreateCategoryRequest` | `201 CategoryResponse` |
+| `PUT` | `/api/categories/{id}` | Admin | `UpdateCategoryRequest` | `200 CategoryResponse` |
+| `DELETE` | `/api/categories/{id}` | Admin | none | `204 NoContent` |
 | `GET` | `/api/stores` | Public | none | `200 StoreProfileResponse[]` |
 | `GET` | `/api/stores/{id}` | Public | none | `200 StoreProfileResponse` |
-| `GET` | `/api/stores/me` | Seller `[bypass]` | none | `200 StoreProfileResponse` |
-| `POST` | `/api/stores` | Seller `[bypass]` | `CreateStoreRequest` | `201 StoreProfileResponse` |
-| `PUT` | `/api/stores/{id}` | Owning Seller `[bypass]` | `UpdateStoreRequest` | `200 StoreProfileResponse` |
-| `PATCH` | `/api/stores/{id}/verify` | Admin `[bypass]` | none | `204 NoContent` |
-| `PATCH` | `/api/stores/{id}/toggle-active` | Admin `[bypass]` | none | `204 NoContent` |
+| `GET` | `/api/stores/me` | Seller | none | `200 StoreProfileResponse` |
+| `POST` | `/api/stores` | Seller | `CreateStoreRequest` | `201 StoreProfileResponse` |
+| `PUT` | `/api/stores/{id}` | Owning Seller | `UpdateStoreRequest` | `200 StoreProfileResponse` |
+| `PATCH` | `/api/stores/{id}/verify` | Admin | none | `204 NoContent` |
+| `PATCH` | `/api/stores/{id}/toggle-active` | Admin | none | `204 NoContent` |
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
 | `GET` | `/api/bags/store/{storeId}` | Public | none | `200 SurpriseBagResponse[]` |
-| `POST` | `/api/bags` | Seller `[bypass]` | `CreateBagRequest` | `201 SurpriseBagResponse` |
-| `PUT` | `/api/bags/{id}` | Owning Seller `[bypass]` | `UpdateBagRequest` | `200 SurpriseBagResponse` |
-| `DELETE` | `/api/bags/{id}` | Owning Seller `[bypass]` | none | `204 NoContent` |
-| `PATCH` | `/api/bags/{id}/status` | Owning Seller `[bypass]` | `UpdateBagStatusRequest` | `204 NoContent` |
+| `POST` | `/api/bags` | Seller | `CreateBagRequest` | `201 SurpriseBagResponse` |
+| `PUT` | `/api/bags/{id}` | Owning Seller | `UpdateBagRequest` | `200 SurpriseBagResponse` |
+| `DELETE` | `/api/bags/{id}` | Seller | none | `204 NoContent` |
+| `PATCH` | `/api/bags/{id}/status` | Owning Seller | `UpdateBagStatusRequest` | `204 NoContent` |
 | `GET` | `/api/reviews/store/{storeId}` | Public | none | `200 StoreReviewResponse[]` |
 | `GET` | `/api/reviews/bag/{bagId}` | Public | none | `200 StoreReviewResponse[]` |
-| `POST` | `/api/reviews` | Customer `[bypass]` | `CreateReviewRequest` | `201 StoreReviewResponse` |
-| `PATCH` | `/api/reviews/{id}/reply` | Owning Seller `[bypass]` | `ReplyReviewRequest` | `204 NoContent` |
-| `PATCH` | `/api/reviews/{id}/report` | Bearer `[bypass]` | none | `204 NoContent` |
+| `POST` | `/api/reviews` | Bearer | `CreateReviewRequest` | `201 StoreReviewResponse` |
+| `PATCH` | `/api/reviews/{id}/reply` | Owning Seller | `ReplyReviewRequest` | `204 NoContent` |
+| `PATCH` | `/api/reviews/{id}/report` | Bearer | none | `204 NoContent` |
 
-`[bypass]` Store authorization attributes are currently commented out. Some actions
-still read JWT claims and can fail without a token; store, bag, and order
-creation also contain fixed development user IDs.
+Store authorization is enforced. Bag deletion is Seller-only but does not yet
+verify that the seller owns the bag.
 
 ### Requests
 
@@ -404,18 +403,19 @@ Important current omissions:
 
 | Method | Path | Access | Request | Success |
 |---|---|---|---|---|
-| `POST` | `/api/orders` | Customer `[bypass]` | `CreateOrderRequest` | `201 OrderResponse` |
+| `POST` | `/api/orders` | Bearer | `CreateOrderRequest` | `201 OrderResponse` |
 | `GET` | `/api/orders/{id}` | Owner, Seller, or Admin | none | `200 OrderResponse` |
 | `GET` | `/api/orders/my-orders` | Bearer | none | `200 OrderResponse[]` |
 | `GET` | `/api/orders/store/{storeId}` | Seller or Admin | none | `200 OrderResponse[]` |
-| `PATCH` | `/api/orders/{id}/status` | Bearer | `UpdateOrderStatusRequest` | `200 OrderResponse` |
+| `PATCH` | `/api/orders/{id}/status` | Order buyer, Seller, or Admin | `UpdateOrderStatusRequest` | `200 OrderResponse` |
 | `POST` | `/api/pickup-disputes` | Bearer | `CreateDisputeRequest` | `201 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes/{id}` | Related user or Admin | none | `200 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes` | Admin | none | `200 PickupDisputeResponse[]` |
 | `PATCH` | `/api/pickup-disputes/{id}/status` | Admin | `UpdateDisputeStatusRequest` | `200 PickupDisputeResponse` |
 
-`[bypass]` Order creation currently has authorization commented out and assigns a
-fixed development user ID.
+Order creation uses the authenticated user's ID. A buyer may cancel their own
+pending order; Sellers and Admins may update progression or cancel pending orders.
+Seller ownership of the target store/order is not currently verified.
 
 ### Requests
 
