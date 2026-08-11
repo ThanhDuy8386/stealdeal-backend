@@ -34,7 +34,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // POST api/categories  [Admin only]
         [HttpPost]
-        // [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateCategoryRequest request)
         {
             var result = await _categoryService.CreateAsync(request);
@@ -43,7 +43,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PUT api/categories/{id}  [Admin only]
         [HttpPut("{id:guid}")]
-        // [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateCategoryRequest request)
         {
             var result = await _categoryService.UpdateAsync(id, request);
@@ -52,7 +52,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // DELETE api/categories/{id}  [Admin only]
         [HttpDelete("{id:guid}")]
-        // [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _categoryService.DeleteAsync(id);

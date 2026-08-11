@@ -35,7 +35,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // POST api/reviews  [Buyer — any authenticated user]
         [HttpPost]
-       // [Authorize]
+        [Authorize]
         public async Task<IActionResult> Create([FromBody] CreateReviewRequest request)
         {
             var buyerId = GetCurrentUserId();
@@ -45,7 +45,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/reviews/{id}/reply  [Seller only]
         [HttpPatch("{id:guid}/reply")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Reply(Guid id, [FromBody] ReplyReviewRequest request)
         {
             var ownerId = GetCurrentUserId();
@@ -55,7 +55,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/reviews/{id}/report  [Any authenticated user]
         [HttpPatch("{id:guid}/report")]
-        //[Authorize]
+        [Authorize]
         public async Task<IActionResult> Report(Guid id)
         {
             var userId = GetCurrentUserId();

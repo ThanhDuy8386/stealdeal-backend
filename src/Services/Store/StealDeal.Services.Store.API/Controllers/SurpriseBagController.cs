@@ -43,19 +43,19 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // POST api/bags  [Seller only]
         [HttpPost]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Create([FromBody] CreateBagRequest request)
         {
-            //Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7")
-            // var ownerId = GetCurrentUserId();
-            // var result = await _bagService.CreateAsync(ownerId, request);
-            var result = await _bagService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            // Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7")
+            var ownerId = GetCurrentUserId();
+            var result = await _bagService.CreateAsync(ownerId, request);
+            // var result = await _bagService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
         // PUT api/bags/{id}  [Seller only]
         [HttpPut("{id:guid}")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateBagRequest request)
         {
             var ownerId = GetCurrentUserId();
@@ -65,7 +65,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // DELETE api/bags/{id}  [Seller only]
         [HttpDelete("{id:guid}")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _bagService.DeleteAsync(id);
@@ -74,7 +74,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/bags/{id}/status  [Seller only]
         [HttpPatch("{id:guid}/status")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateBagStatusRequest request)
         {
             var ownerId = GetCurrentUserId();

@@ -35,7 +35,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // GET api/stores/me  [Seller only]
         [HttpGet("me")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> GetMyStore()
         {
             var ownerId = GetCurrentUserId();
@@ -45,18 +45,18 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // POST api/stores  [Seller only]
         [HttpPost]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Create([FromBody] CreateStoreRequest request)
         {
-            //var ownerId = GetCurrentUserId();
-            //var result = await _storeService.CreateAsync(ownerId, request);
-            var result = await _storeService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            var ownerId = GetCurrentUserId();
+            var result = await _storeService.CreateAsync(ownerId, request);
+            // var result = await _storeService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
         // PUT api/stores/{id}  [Seller only]
         [HttpPut("{id:guid}")]
-        //[Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStoreRequest request)
         {
             var ownerId = GetCurrentUserId();
@@ -66,7 +66,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/stores/{id}/verify  [Admin only]
         [HttpPatch("{id:guid}/verify")]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Verify(Guid id)
         {
             await _storeService.VerifyStoreAsync(id);
@@ -75,7 +75,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/stores/{id}/toggle-active  [Admin only]
         [HttpPatch("{id:guid}/toggle-active")]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> ToggleActive(Guid id)
         {
             await _storeService.ToggleActiveAsync(id);
