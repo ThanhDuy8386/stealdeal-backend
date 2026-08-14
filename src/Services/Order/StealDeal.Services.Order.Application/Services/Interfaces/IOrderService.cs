@@ -9,9 +9,9 @@ namespace StealDeal.Services.Order.Application.Services.Interfaces
     public interface IOrderService
     {
         Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request);
-        Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, string role);
+        Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles);
         Task<IEnumerable<OrderResponse>> GetMyOrdersAsync(Guid userId);
         Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid ownerId);
-        Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, string role, UpdateOrderStatusRequest request);
+        Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request);
     }
 }

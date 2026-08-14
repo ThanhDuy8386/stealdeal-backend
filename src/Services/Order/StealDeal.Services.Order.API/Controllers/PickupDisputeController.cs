@@ -33,8 +33,8 @@ namespace StealDeal.Services.Order.API.Controllers
         public async Task<IActionResult> GetById(Guid id)
         {
             var userId = GetCurrentUserId();
-            var role = GetCurrentUserRole();
-            var result = await _disputeService.GetDisputeByIdAsync(id, userId, role);
+            var roles = GetCurrentUserRoles();
+            var result = await _disputeService.GetDisputeByIdAsync(id, userId, roles);
             return Ok(result);
         }
 
@@ -68,17 +68,18 @@ namespace StealDeal.Services.Order.API.Controllers
             return Guid.Parse(sub);
         }
 
-        private string GetCurrentUserRole()
+        private string[] GetCurrentUserRoles()
         {
-            var role = User.FindFirstValue(ClaimTypes.Role)
-                       ?? User.FindFirstValue("role");
+            var roles = User.Claims
+                .Where(claim => claim.Type == ClaimTypes.Role || claim.Type == "role")
+                .Select(claim => claim.Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-
-            if (string.IsNullOrEmpty(role))
+            if (roles.Length == 0)
                 throw new Application.Exceptions.UnauthorizedException("User role is missing.");
 
-
-            return role;
+            return roles;
         }
     }
 }
