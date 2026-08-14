@@ -7,6 +7,7 @@ using StealDeal.Services.Payment.Application.DTOs.Response;
 using StealDeal.Services.Payment.Application.Exceptions;
 using StealDeal.Services.Payment.Application.Mappings;
 using StealDeal.Services.Payment.Application.Services.Interfaces;
+using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Domain.Models;
 
@@ -37,13 +38,15 @@ namespace StealDeal.Services.Payment.Application.Services
             if (transaction == null)
                 throw new NotFoundException("Transaction not found.");
 
-            if (!transaction.Status.Equals("Success", StringComparison.OrdinalIgnoreCase))
+            if (!transaction.Status.Equals(TransactionStatuses.Success, StringComparison.OrdinalIgnoreCase))
                 throw new BadRequestException("Only successful transactions can be refunded.");
 
             // Check if amount to refund exceeds the transaction amount
             var existingRefunds = await _refundRepository.GetByTransactionIdAsync(request.TransactionId);
             var alreadyRefundedAmount = existingRefunds
-                .Where(r => r.Status.Equals("Processed", StringComparison.OrdinalIgnoreCase) || r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                .Where(r =>
+                    r.Status.Equals(RefundStatuses.Processed, StringComparison.OrdinalIgnoreCase) ||
+                    r.Status.Equals(RefundStatuses.Pending, StringComparison.OrdinalIgnoreCase))
                 .Sum(r => r.Amount);
 
             if (alreadyRefundedAmount + request.Amount > transaction.Amount)
@@ -103,9 +106,30 @@ namespace StealDeal.Services.Payment.Application.Services
 
             refund.Status = request.Status.Trim();
 
-            if (request.Status.Equals("Processed", StringComparison.OrdinalIgnoreCase))
+            if (request.GatewayRefundRef != null)
             {
-                refund.ProcessedAt = DateTime.UtcNow;
+                refund.GatewayRefundRef = request.GatewayRefundRef.Trim();
+            }
+
+            if (request.GatewayResponseCode != null)
+            {
+                refund.GatewayResponseCode = request.GatewayResponseCode.Trim();
+            }
+
+            if (request.FailureReason != null)
+            {
+                refund.FailureReason = request.FailureReason.Trim();
+            }
+
+            refund.UpdatedAt = DateTime.UtcNow;
+
+            if (request.Status.Equals(RefundStatuses.Processed, StringComparison.OrdinalIgnoreCase))
+            {
+                refund.ProcessedAt = request.ProcessedAt ?? DateTime.UtcNow;
+            }
+            else if (request.ProcessedAt.HasValue)
+            {
+                refund.ProcessedAt = request.ProcessedAt;
             }
 
             _refundRepository.Update(refund);

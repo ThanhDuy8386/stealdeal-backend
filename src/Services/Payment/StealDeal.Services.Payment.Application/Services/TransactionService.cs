@@ -7,6 +7,7 @@ using StealDeal.Services.Payment.Application.DTOs.Response;
 using StealDeal.Services.Payment.Application.Exceptions;
 using StealDeal.Services.Payment.Application.Mappings;
 using StealDeal.Services.Payment.Application.Services.Interfaces;
+using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Domain.Models;
 
@@ -32,8 +33,12 @@ namespace StealDeal.Services.Payment.Application.Services
 
             // Check if there is already a successful or pending transaction for this order
             var existing = await _transactionRepository.GetByOrderIdAsync(request.OrderId);
-            if (existing != null && (existing.Status == "Success" || existing.Status == "Pending"))
+            if (existing != null &&
+                (existing.Status == TransactionStatuses.Success ||
+                 existing.Status == TransactionStatuses.Pending))
+            {
                 throw new ConflictException("A transaction is already registered or succeeded for this order.");
+            }
 
             var transaction = request.ToEntity(userId);
 
@@ -86,13 +91,51 @@ namespace StealDeal.Services.Payment.Application.Services
                 throw new NotFoundException("Transaction not found.");
 
             transaction.Status = request.Status.Trim();
-            transaction.GatewayRef = request.GatewayRef?.Trim();
-            transaction.FailureReason = request.FailureReason?.Trim();
+
+            if (request.GatewayRef != null)
+            {
+                transaction.GatewayRef = request.GatewayRef.Trim();
+            }
+
+            if (request.CheckoutUrl != null)
+            {
+                transaction.CheckoutUrl = request.CheckoutUrl.Trim();
+            }
+
+            if (request.GatewayTransactionNo != null)
+            {
+                transaction.GatewayTransactionNo = request.GatewayTransactionNo.Trim();
+            }
+
+            if (request.GatewayResponseCode != null)
+            {
+                transaction.GatewayResponseCode = request.GatewayResponseCode.Trim();
+            }
+
+            if (request.GatewayTransactionStatus != null)
+            {
+                transaction.GatewayTransactionStatus = request.GatewayTransactionStatus.Trim();
+            }
+
+            if (request.FailureReason != null)
+            {
+                transaction.FailureReason = request.FailureReason.Trim();
+            }
+
+            if (request.ExpiresAt.HasValue)
+            {
+                transaction.ExpiresAt = request.ExpiresAt;
+            }
+
             transaction.UpdatedAt = DateTime.UtcNow;
 
-            if (request.Status.Equals("Success", StringComparison.OrdinalIgnoreCase))
+            if (request.Status.Equals(TransactionStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
-                transaction.PaidAt = DateTime.UtcNow;
+                transaction.PaidAt = request.PaidAt ?? DateTime.UtcNow;
+            }
+            else if (request.PaidAt.HasValue)
+            {
+                transaction.PaidAt = request.PaidAt;
             }
 
             _transactionRepository.Update(transaction);

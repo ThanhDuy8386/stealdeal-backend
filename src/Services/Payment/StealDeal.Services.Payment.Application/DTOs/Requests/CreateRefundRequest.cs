@@ -12,5 +12,9 @@ namespace StealDeal.Services.Payment.Application.DTOs.Requests
     public class UpdateRefundStatusRequest
     {
         public string Status { get; set; } = null!;
+        public string? GatewayRefundRef { get; set; }
+        public string? GatewayResponseCode { get; set; }
+        public string? FailureReason { get; set; }
+        public DateTime? ProcessedAt { get; set; }
     }
 }
