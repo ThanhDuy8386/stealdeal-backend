@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StealDeal.Services.Notification.API.Middlewares;
@@ -12,6 +13,7 @@ using StealDeal.Services.Notification.Application.Services.Interfaces;
 using StealDeal.Services.Notification.Domain.Interfaces;
 using StealDeal.Services.Notification.Infrastructure.BackgroundServices;
 using StealDeal.Services.Notification.Infrastructure.Configuration;
+using StealDeal.Services.Notification.Infrastructure.EmailProvider;
 using StealDeal.Services.Notification.Infrastructure.Persistence;
 using StealDeal.Services.Notification.Infrastructure.Repositories;
 
@@ -29,6 +31,15 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IIntegrationEventHandler<SendEmailVerificationOtpEvent>, SendEmailVerificationOtpEventHandler>();
+
+// ── Email Sender ───────────────────────────────────────────
+builder.Services.Configure<BrevoSettings>(builder.Configuration.GetSection("Brevo"));
+
+builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>((sp, client) =>
+{
+    var settings = sp.GetRequiredService<IOptions<BrevoSettings>>().Value;
+    client.BaseAddress = new Uri(settings.BaseUrl);
+});
 
 // ── RabbitMQ & Consumers ────────────────────────────────────
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
