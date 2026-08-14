@@ -68,7 +68,7 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "StealDeal Order API",
+        Title = "StealDeal Payment API",
         Version = "v1"
     });
 
