@@ -139,7 +139,16 @@ namespace StealDeal.Services.Identity.Application.Services
 
             if (!String.IsNullOrWhiteSpace(request.Email))
             {
-                user.Email = request.Email;
+                var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+                if (!string.Equals(user.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!await _userRepository.IsEmailUniqueAsync(normalizedEmail))
+                    {
+                        throw new ConflictException("Email already exists.");
+                    }
+                }
+
+                user.Email = normalizedEmail;
             }
 
             if (!String.IsNullOrWhiteSpace(request.Phone))
@@ -200,9 +209,10 @@ namespace StealDeal.Services.Identity.Application.Services
                 {
                     normalizedRole = "Seller";
                 }
-                else if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(role?.Trim(), "SuperAdmin", StringComparison.OrdinalIgnoreCase))
                 {
-                    normalizedRole = "Admin";
+                    throw new BadRequestException("Admin roles must be managed through the Admin API.");
                 }
                 else
                 {

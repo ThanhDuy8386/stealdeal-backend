@@ -21,7 +21,9 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
         {
             return _context.RefreshTokens
                 .Include(rt => rt.User)
-                .ThenInclude(u => u.Roles)
+                .ThenInclude(u => u!.Roles)
+                .Include(rt => rt.Admin)
+                .ThenInclude(a => a!.Roles)
                 .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
         }
 

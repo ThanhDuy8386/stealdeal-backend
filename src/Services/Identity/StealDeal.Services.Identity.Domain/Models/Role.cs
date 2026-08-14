@@ -10,5 +10,6 @@ namespace StealDeal.Services.Identity.Domain.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public ICollection<User> Users { get; set; } = new List<User>();
+        public ICollection<Admin> Admins { get; set; } = new List<Admin>();
     }
 }

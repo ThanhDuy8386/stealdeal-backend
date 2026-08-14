@@ -36,7 +36,8 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
 
         public async Task<Role?> GetByNameAsync(string name)
         {
-            return await _context.Roles.FirstOrDefaultAsync(role => role.Name == name.Trim());
+            var normalizedName = name.Trim();
+            return await _context.Roles.FirstOrDefaultAsync(role => role.Name == normalizedName);
         }
 
         public async Task<List<Role>> GetRolesByNamesAsync(IEnumerable<string> roleNames)
@@ -49,7 +50,13 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
 
         public async Task<bool> IsRoleAssignedAsync(Guid roleId)
         {
-            return await _context.Users.AnyAsync(user => user.Roles.Any(role => role.Id == roleId));
+            var isAssignedToUser = await _context.Users.AnyAsync(user => user.Roles.Any(role => role.Id == roleId));
+            if (isAssignedToUser)
+            {
+                return true;
+            }
+
+            return await _context.Admins.AnyAsync(admin => admin.Roles.Any(role => role.Id == roleId));
         }
 
         public void Update(Role role)
