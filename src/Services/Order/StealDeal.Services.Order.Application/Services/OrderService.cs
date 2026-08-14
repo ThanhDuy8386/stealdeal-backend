@@ -71,18 +71,18 @@ namespace StealDeal.Services.Order.Application.Services
             return order.ToResponse();
         }
 
-        public async Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, string role)
+        public async Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles)
         {
             var order = await _orderRepository.GetByIdAsync(orderId);
             if (order == null)
                 throw new NotFoundException("Order not found.");
 
             // Verification check
-            bool isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+            bool isAdmin = roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
             bool isBuyer = order.UserId == userId;
             // In a real microservice, Seller ownership of order.StoreId should be verified.
             // For now, we allow access if the user is the Admin, the Buyer, or any Seller.
-            bool isSeller = role.Equals("Seller", StringComparison.OrdinalIgnoreCase);
+            bool isSeller = roles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
 
             if (!isAdmin && !isBuyer && !isSeller)
                 throw new ForbiddenException("You do not have permission to view this order.");
@@ -103,15 +103,15 @@ namespace StealDeal.Services.Order.Application.Services
             return orders.Select(o => o.ToResponse());
         }
 
-        public async Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, string role, UpdateOrderStatusRequest request)
+        public async Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request)
         {
             var order = await _orderRepository.GetByIdAsync(orderId);
             if (order == null)
                 throw new NotFoundException("Order not found.");
 
-            bool isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+            bool isAdmin = roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
             bool isBuyer = order.UserId == userId;
-            bool isSeller = role.Equals("Seller", StringComparison.OrdinalIgnoreCase);
+            bool isSeller = roles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
 
             // Validate status transitions & permissions
             string currentStatus = order.Status;

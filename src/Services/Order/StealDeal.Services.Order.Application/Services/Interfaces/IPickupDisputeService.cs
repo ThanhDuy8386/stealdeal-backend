@@ -9,7 +9,7 @@ namespace StealDeal.Services.Order.Application.Services.Interfaces
     public interface IPickupDisputeService
     {
         Task<PickupDisputeResponse> CreateDisputeAsync(Guid reporterId, CreateDisputeRequest request);
-        Task<PickupDisputeResponse> GetDisputeByIdAsync(Guid disputeId, Guid userId, string role);
+        Task<PickupDisputeResponse> GetDisputeByIdAsync(Guid disputeId, Guid userId, IEnumerable<string> roles);
         Task<IEnumerable<PickupDisputeResponse>> GetAllDisputesAsync();
         Task<PickupDisputeResponse> UpdateDisputeStatusAsync(Guid disputeId, UpdateDisputeStatusRequest request);
     }

@@ -52,13 +52,13 @@ namespace StealDeal.Services.Order.Application.Services
             return dispute.ToResponse();
         }
 
-        public async Task<PickupDisputeResponse> GetDisputeByIdAsync(Guid disputeId, Guid userId, string role)
+        public async Task<PickupDisputeResponse> GetDisputeByIdAsync(Guid disputeId, Guid userId, IEnumerable<string> roles)
         {
             var dispute = await _disputeRepository.GetByIdAsync(disputeId);
             if (dispute == null)
                 throw new NotFoundException("Pickup dispute not found.");
 
-            bool isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+            bool isAdmin = roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
             bool isReporter = dispute.ReporterId == userId;
             bool isOrderBuyer = dispute.OrderProfile?.UserId == userId;
 

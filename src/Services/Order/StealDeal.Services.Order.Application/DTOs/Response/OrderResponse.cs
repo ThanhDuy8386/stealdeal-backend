@@ -19,6 +19,8 @@ namespace StealDeal.Services.Order.Application.DTOs.Response
         public Guid UserId { get; set; }
         public Guid StoreId { get; set; }
         public string StoreNameSnapshot { get; set; } = null!;
+        public string ContactNameSnapshot { get; set; } = null!;
+        public string ContactPhoneSnapshot { get; set; } = null!;
         public decimal DeliveryFee { get; set; }
         public decimal VoucherDiscount { get; set; }
         public decimal TotalAmount { get; set; }

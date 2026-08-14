@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace StealDeal.Services.Order.Application.DTOs.Requests
 {
@@ -15,6 +16,10 @@ namespace StealDeal.Services.Order.Application.DTOs.Requests
     {
         public Guid StoreId { get; set; }
         public string StoreNameSnapshot { get; set; } = null!;
+        [Required, MaxLength(256)]
+        public string ContactNameSnapshot { get; set; } = null!;
+        [Required, MaxLength(20)]
+        public string ContactPhoneSnapshot { get; set; } = null!;
         public decimal DeliveryFee { get; set; }
         public decimal VoucherDiscount { get; set; }
         public string DeliveryType { get; set; } = null!;
