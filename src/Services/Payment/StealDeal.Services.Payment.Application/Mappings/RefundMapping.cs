@@ -1,6 +1,7 @@
 using System;
 using StealDeal.Services.Payment.Application.DTOs.Requests;
 using StealDeal.Services.Payment.Application.DTOs.Response;
+using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Models;
 
 namespace StealDeal.Services.Payment.Application.Mappings
@@ -16,8 +17,9 @@ namespace StealDeal.Services.Payment.Application.Mappings
                 OrderId = orderId,
                 Amount = request.Amount,
                 Reason = request.Reason.Trim(),
-                Status = "Pending", // Default initial status
-                CreatedAt = DateTime.UtcNow
+                Status = RefundStatuses.Pending,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             };
         }
 
@@ -33,7 +35,11 @@ namespace StealDeal.Services.Payment.Application.Mappings
                 Amount = refund.Amount,
                 Reason = refund.Reason,
                 Status = refund.Status,
+                GatewayRefundRef = refund.GatewayRefundRef,
+                GatewayResponseCode = refund.GatewayResponseCode,
+                FailureReason = refund.FailureReason,
                 CreatedAt = refund.CreatedAt,
+                UpdatedAt = refund.UpdatedAt,
                 ProcessedAt = refund.ProcessedAt
             };
         }
