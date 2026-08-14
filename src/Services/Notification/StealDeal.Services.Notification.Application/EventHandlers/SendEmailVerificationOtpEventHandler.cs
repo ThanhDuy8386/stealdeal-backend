@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using StealDeal.Services.Notification.Application.DTOs.Events;
 using StealDeal.Services.Notification.Application.Messaging;
+using StealDeal.Services.Notification.Application.Services.Interfaces;
 using StealDeal.Services.Notification.Domain.Interfaces;
 using StealDeal.Services.Notification.Domain.Models;
 
@@ -12,18 +13,18 @@ namespace StealDeal.Services.Notification.Application.EventHandlers
     {
         private const string ConsumerName = "EmailVerificationConsumer";
 
-        private readonly INotificationProfileRepository _notificationRepository;
         private readonly IProcessedMessageRepository _processedMessageRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IEmailSender _emailSender;
 
         public SendEmailVerificationOtpEventHandler(
-            INotificationProfileRepository notificationRepository,
             IProcessedMessageRepository processedMessageRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IEmailSender emailSender)
         {
-            _notificationRepository = notificationRepository;
             _processedMessageRepository = processedMessageRepository;
             _unitOfWork = unitOfWork;
+            _emailSender = emailSender;
         }
 
         public async Task HandleAsync(
@@ -60,9 +61,16 @@ namespace StealDeal.Services.Notification.Application.EventHandlers
                 ProcessedAt = DateTime.UtcNow
             };
 
-            await _notificationRepository.AddAsync(notification);
-            await _processedMessageRepository.AddAsync(processedMessage);
+            // await _notificationRepository.AddAsync(notification);
+            await _emailSender.SendOtpAsync(
+                @event.Email,
+                @event.FullName,
+                @event.Otp,
+                @event.ExpiresAt,
+                cancellationToken);
 
+
+            await _processedMessageRepository.AddAsync(processedMessage);
             await _unitOfWork.SaveChangesAsync();
         }
     }

@@ -21,15 +21,26 @@ namespace StealDeal.Services.Identity.Infrastructure.Security
 
         public string GenerateAccessToken(User user, IReadOnlyCollection<string> roles)
         {
+            return GenerateAccessToken(user.Id, user.Email, user.FullName, "User", roles);
+        }
+
+        public string GenerateAccessToken(Admin admin, IReadOnlyCollection<string> roles)
+        {
+            return GenerateAccessToken(admin.Id, admin.Email, admin.FullName, "Admin", roles);
+        }
+
+        private string GenerateAccessToken(Guid accountId, string email, string fullName, string accountType, IReadOnlyCollection<string> roles)
+        {
             var expiresAt = GetAccessTokenExpiresAt();
 
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Name, user.FullName)
+                new Claim(JwtRegisteredClaimNames.Sub, accountId.ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, email),
+                new Claim(ClaimTypes.NameIdentifier, accountId.ToString()),
+                new Claim(ClaimTypes.Email, email),
+                new Claim(ClaimTypes.Name, fullName),
+                new Claim("account_type", accountType)
             };
 
             foreach (var role in roles)

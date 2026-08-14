@@ -7,7 +7,7 @@ namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;

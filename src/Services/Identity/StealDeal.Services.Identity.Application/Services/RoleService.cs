@@ -84,7 +84,7 @@ namespace StealDeal.Services.Identity.Application.Services
             var isAssigned = await _roleRepository.IsRoleAssignedAsync(role.Id);
             if (isAssigned)
             {
-                throw new ConflictException($"Cannot delete role '{role.Name}' because it is assigned to one or more users.");
+                throw new ConflictException($"Cannot delete role '{role.Name}' because it is assigned to one or more accounts.");
             }
 
             _roleRepository.Delete(role);
@@ -137,6 +137,7 @@ namespace StealDeal.Services.Identity.Application.Services
         private static bool IsSystemRole(string roleName)
         {
             return string.Equals(roleName, "Admin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(roleName, "SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(roleName, "Customer", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(roleName, "Seller", StringComparison.OrdinalIgnoreCase);
         }

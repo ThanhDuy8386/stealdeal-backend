@@ -10,6 +10,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         }
 
         public DbSet<User> Users { get; set; }
+        public DbSet<Admin> Admins { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<UserAddress> UserAddresses { get; set; }
         public DbSet<UserTrustScore> UserTrustScores { get; set; }
@@ -34,6 +35,18 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.Property(e => e.AvatarUrl).HasMaxLength(1000);
             });
 
+            // Admins Configuration
+            modelBuilder.Entity<Admin>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Email).IsRequired().HasMaxLength(256);
+                entity.HasIndex(e => e.Email).IsUnique();
+                entity.Property(e => e.PasswordHash).IsRequired();
+                entity.Property(e => e.FullName).IsRequired().HasMaxLength(256);
+                entity.Property(e => e.Phone).HasMaxLength(20);
+                entity.Property(e => e.AvatarUrl).HasMaxLength(1000);
+            });
+
             // Roles Configuration
             modelBuilder.Entity<Role>(entity =>
             {
@@ -46,6 +59,11 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 .HasMany(u => u.Roles)
                 .WithMany(r => r.Users)
                 .UsingEntity(j => j.ToTable("UserRoles"));
+
+            modelBuilder.Entity<Admin>()
+                .HasMany(a => a.Roles)
+                .WithMany(r => r.Admins)
+                .UsingEntity(j => j.ToTable("AdminRoles"));
 
             // UserAddresses Configuration
             modelBuilder.Entity<UserAddress>(entity =>
@@ -97,6 +115,11 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.HasOne(e => e.User)
                       .WithMany(u => u.RefreshTokens)
                       .HasForeignKey(e => e.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Admin)
+                      .WithMany(a => a.RefreshTokens)
+                      .HasForeignKey(e => e.AdminId)
                       .OnDelete(DeleteBehavior.Cascade);
             });
 
