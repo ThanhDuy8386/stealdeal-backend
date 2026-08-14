@@ -28,6 +28,14 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
                     .IsRequired()
                     .HasMaxLength(200);
 
+                entity.Property(o => o.ContactNameSnapshot)
+                    .IsRequired()
+                    .HasMaxLength(256);
+
+                entity.Property(o => o.ContactPhoneSnapshot)
+                    .IsRequired()
+                    .HasMaxLength(20);
+
                 entity.Property(o => o.DeliveryFee)
                     .HasPrecision(18, 2);
 

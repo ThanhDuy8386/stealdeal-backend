@@ -1,6 +1,6 @@
 # StealDeal Frontend API Reference
 
-> Source snapshot: 2026-07-30
+> Source snapshot: 2026-08-14
 >
 > Purpose: frontend mock data, UI field planning, and TypeScript API types
 >
@@ -430,6 +430,8 @@ export interface CreateOrderItemRequest {
 export interface CreateOrderRequest {
   storeId: UUID;
   storeNameSnapshot: string;
+  contactNameSnapshot: string; // required, max 256 characters
+  contactPhoneSnapshot: string; // required, max 20 characters
   deliveryFee: Money;
   voucherDiscount: Money;
   deliveryType: string;
@@ -455,6 +457,8 @@ export interface UpdateDisputeStatusRequest {
 
 The server calculates each item subtotal and the final total, but currently
 trusts the client-provided names, prices, fees, discounts, and IDs.
+The contact name and phone are captured at checkout and remain unchanged on
+the order if the buyer later updates their Identity profile.
 
 ### Responses
 
@@ -473,6 +477,8 @@ export interface OrderResponse {
   userId: UUID;
   storeId: UUID;
   storeNameSnapshot: string;
+  contactNameSnapshot: string;
+  contactPhoneSnapshot: string;
   deliveryFee: Money;
   voucherDiscount: Money;
   totalAmount: Money;

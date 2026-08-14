@@ -11,6 +11,8 @@ namespace StealDeal.Services.Order.Domain.Models
         public Guid StoreId { get; set; }
 
         public string StoreNameSnapshot { get; set; } = null!;
+        public string ContactNameSnapshot { get; set; } = null!;
+        public string ContactPhoneSnapshot { get; set; } = null!;
 
         public decimal DeliveryFee { get; set; }
         public decimal VoucherDiscount { get; set; }
