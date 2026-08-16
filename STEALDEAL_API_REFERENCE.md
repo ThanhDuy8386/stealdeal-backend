@@ -1,6 +1,6 @@
 # StealDeal Frontend API Reference
 
-> Source snapshot: 2026-08-14
+> Source snapshot: 2026-08-16
 >
 > Purpose: frontend mock data, UI field planning, and TypeScript API types
 >
@@ -23,7 +23,9 @@ are kept in [STEALDEAL_BACKEND_API_GAPS.md](STEALDEAL_BACKEND_API_GAPS.md).
 export type UUID = string;
 export type ISODateTime = string;
 export type Money = number;
-export type Role = "Customer" | "Seller" | "Admin";
+export type UserRole = "Customer" | "Seller";
+export type AdminRole = "Admin" | "SuperAdmin";
+export type Role = UserRole | AdminRole;
 export type NoContent = void;
 
 // Several controllers currently return anonymous { message } objects.
@@ -44,8 +46,10 @@ export interface ProblemDetails {
 - Collections are raw arrays unless `PagedResult<T>` is shown.
 - There is no shared `{ data, success, message }` response envelope.
 - Send protected requests with `Authorization: Bearer <accessToken>`.
-- Login and refresh store the refresh token in the HttpOnly
-  `refresh_token` cookie. Browser requests to session endpoints should use
+- User login and refresh store the refresh token in the HttpOnly
+  `refresh_token` cookie scoped to `/api/auth`. Admin login and refresh use a
+  separate HttpOnly `admin_refresh_token` cookie scoped to `/api/admin-auth`.
+  Browser requests to either set of session endpoints should use
   `credentials: "include"`.
 - `204` and some `200` operations have no response body.
 
@@ -75,19 +79,35 @@ temporary implementation bypass; see the gap report before integrating it.
 | `POST` | `/api/auth/resend-otp` | Public | `ResendOtpRequest` | `200 MessageResponse` |
 | `GET` | `/api/auth/me` | Bearer | none | `200 CurrentUserResponse` |
 | `POST` | `/api/auth/logout` | Refresh cookie optional | none | `200 MessageResponse` |
+| `POST` | `/api/admin-auth/login` | Public | `LoginRequest` | `200 AccessTokenResponse` + admin refresh cookie |
+| `POST` | `/api/admin-auth/refresh` | Admin refresh cookie | none | `200 AccessTokenResponse` + rotated cookie |
+| `GET` | `/api/admin-auth/me` | Admin or SuperAdmin bearer | none | `200 CurrentAdminResponse` |
+| `POST` | `/api/admin-auth/logout` | Admin refresh cookie optional | none | `200 MessageResponse` |
 | `GET` | `/api/account/profile` | Bearer | none | `200 UserDetailResponse` |
 | `PUT` | `/api/account/profile` | Bearer | `UpdateMyProfileRequest` | `200 UserDetailResponse` |
 | `PUT` | `/api/account/password` | Bearer | `ChangePasswordRequest` | `204 NoContent` |
-| `POST` | `/api/user` | Admin | `AdminCreateUserRequest` | `200 UserDetailResponse` |
-| `GET` | `/api/user` | Admin | `GetUsersQueryRequest` query | `200 PagedResult<UserResponse>` |
-| `GET` | `/api/user/{id}` | Admin | none | `200 UserDetailResponse` |
-| `PUT` | `/api/user/{id}` | Admin | `AdminUpdateUserRequest` | `200 NoContent` |
-| `DELETE` | `/api/user/{id}` | Admin | none | `204 NoContent` |
+| `POST` | `/api/user` | Admin or SuperAdmin | `AdminCreateUserRequest` | `200 UserDetailResponse` |
+| `GET` | `/api/user` | Admin or SuperAdmin | `GetUsersQueryRequest` query | `200 PagedResult<UserResponse>` |
+| `GET` | `/api/user/{id}` | Admin or SuperAdmin | none | `200 UserDetailResponse` |
+| `PUT` | `/api/user/{id}` | Admin or SuperAdmin | `AdminUpdateUserRequest` | `200 NoContent` |
+| `DELETE` | `/api/user/{id}` | Admin or SuperAdmin | none | `204 NoContent` |
+| `POST` | `/api/admin` | Admin or SuperAdmin | `CreateAdminRequest` | `201 AdminDetailResponse` |
+| `GET` | `/api/admin` | Admin or SuperAdmin | `GetAdminsQueryRequest` query | `200 PagedResult<AdminResponse>` |
+| `GET` | `/api/admin/{id}` | Admin or SuperAdmin | none | `200 AdminDetailResponse` |
+| `PUT` | `/api/admin/{id}` | Admin or SuperAdmin | `UpdateAdminRequest` | `200 NoContent` |
+| `DELETE` | `/api/admin/{id}` | Admin or SuperAdmin | none | `204 NoContent` |
 
 > **Deprecated - do not use from the frontend:** `RoleController` exposes six
-> Admin endpoints under `/api/role`, but StealDeal uses the three fixed roles
-> `Customer`, `Seller`, and `Admin`. Dynamic role CRUD is not part of the
-> product contract.
+> Admin/SuperAdmin endpoints under `/api/role`, but StealDeal uses the four
+> fixed roles `Customer`, `Seller`, `Admin`, and `SuperAdmin`. Dynamic role
+> CRUD is not part of the product contract.
+
+User and admin accounts now live in separate stores. `/api/auth/*` only
+authenticates `Customer`/`Seller` accounts, while `/api/admin-auth/*` only
+authenticates `Admin`/`SuperAdmin` accounts. The same email may exist once in
+each account store; its password and session are independent in each flow.
+`GET /api/user` no longer returns admins, so admin dashboards must use
+`GET /api/admin` instead.
 
 ### Requests
 
@@ -130,7 +150,7 @@ export interface AdminCreateUserRequest {
   password: string;
   fullName: string;
   phone?: string | null;
-  roles: Role[]; // at least one
+  roles: UserRole[]; // at least one; admin roles are rejected
 }
 
 export interface AdminUpdateUserRequest {
@@ -138,12 +158,39 @@ export interface AdminUpdateUserRequest {
   email?: string | null;
   phone?: string | null;
   isActive?: boolean | null;
-  roles?: Role[] | null;
+  roles?: UserRole[] | null; // admin roles are rejected
 }
 
 export interface GetUsersQueryRequest {
   searchTerm?: string;
-  role?: Role;
+  role?: UserRole;
+  accountStatus?: "active" | "inactive";
+  page?: number;     // default 1
+  pageSize?: number; // default 10
+}
+
+export interface CreateAdminRequest {
+  email: string;
+  password: string; // at least 8 characters
+  fullName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  roles: AdminRole[]; // at least one
+}
+
+export interface UpdateAdminRequest {
+  email?: string | null;
+  password?: string | null; // when supplied, at least 8 characters
+  fullName?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  isActive?: boolean | null;
+  roles?: AdminRole[] | null; // when supplied, at least one
+}
+
+export interface GetAdminsQueryRequest {
+  searchTerm?: string; // matches email or full name
+  role?: AdminRole;
   accountStatus?: "active" | "inactive";
   page?: number;     // default 1
   pageSize?: number; // default 10
@@ -169,6 +216,14 @@ export interface AccessTokenResponse {
 // Anonymous response in AuthController; no named C# DTO yet.
 export interface CurrentUserResponse {
   userId: string | null;
+  email: string | null;
+  name: string | null;
+  roles: string[];
+}
+
+// Anonymous response in AdminAuthController; no named C# DTO yet.
+export interface CurrentAdminResponse {
+  adminId: string | null;
   email: string | null;
   name: string | null;
   roles: string[];
@@ -220,6 +275,20 @@ export interface UserResponse {
   roles: string[];
 }
 
+export interface AdminResponse {
+  id: UUID;
+  email: string;
+  phone: string | null;
+  fullName: string;
+  avatarUrl: string | null;
+  isEmailVerified: boolean;
+  isActive: boolean;
+  createdAt: ISODateTime;
+  roles: AdminRole[];
+}
+
+export type AdminDetailResponse = AdminResponse;
+
 export interface PagedResult<T> {
   items: T[];
   page: number;
@@ -231,6 +300,13 @@ export interface PagedResult<T> {
 
 `UserAddressResponse` is currently nested read-only data. There are no address
 create/update/delete endpoints.
+
+Admin creation marks the account active and email-verified immediately.
+Deleting an admin is a soft delete and also deactivates it. Admin access and
+refresh tokens contain only the admin account and its `Admin`/`SuperAdmin`
+roles; user and admin refresh tokens are rotated independently. Within the
+Identity service, `Admin` and `SuperAdmin` currently have the same admin CRUD
+permissions, including the ability to manage accounts with either admin role.
 
 ## 3. Store
 
@@ -634,7 +710,8 @@ contract is fixed.
 
 | Field | Values currently created or handled by code |
 |---|---|
-| `role` | `Customer`, `Seller`, `Admin` |
+| user `role` | `Customer`, `Seller` |
+| admin `role` | `Admin`, `SuperAdmin` |
 | initial order status | `Pending` |
 | saga order statuses | `InventoryReservationFailed`, `PaymentFailed`, `Confirmed` |
 | manual cancellation | `Cancelled` |
@@ -651,6 +728,8 @@ they can be replaced when the backend adopts final unions.
 ## 8. Frontend Field Boundaries
 
 - Safe to model now: every field in the TypeScript contracts above.
+- Keep user auth (`/api/auth`) and admin auth (`/api/admin-auth`) as separate
+  frontend session flows, including separate refresh calls and cookies.
 - Do not invent sensitive public fields such as password hashes, full bank
   accounts, OTP hashes, refresh tokens, outbox messages, or processed messages.
 - Bag images, seller-private store details, address editing, review moderation,
