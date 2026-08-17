@@ -100,5 +100,11 @@ namespace StealDeal.Services.Store.Application.Services
             _storeRepository.Update(store);
             await _unitOfWork.SaveChangesAsync();
         }
+
+        public async Task<List<PendingStoreResponse>> GetPendingVerificationAsync()
+        {
+            var pendingStores = await _storeRepository.GetPendingVerificationAsync();
+            return pendingStores.Select(s => s.ToPendingResponse()).ToList();
+        }
     }
 }

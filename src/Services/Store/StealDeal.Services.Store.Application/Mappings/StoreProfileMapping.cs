@@ -61,5 +61,25 @@ namespace StealDeal.Services.Store.Application.Mappings
                 CreatedAt = store.CreatedAt
             };
         }
+
+        public static PendingStoreResponse ToPendingResponse(this StoreProfile store)
+        {
+            return new PendingStoreResponse
+            {
+                Id = store.Id,
+                OwnerId = store.OwnerId,
+                Name = store.Name,
+                Description = store.Description,
+                Address = store.Address,
+                Latitude = store.Latitude,
+                Longitude = store.Longitude,
+                Phone = store.Phone,
+                AvatarUrl = store.AvatarUrl,
+                LicenseUrl = store.LicenseUrl,
+                IsVerify = store.IsVerify,
+                IsActive = store.IsActive,
+                CreatedAt = store.CreatedAt
+            };
+        }
     }
 }

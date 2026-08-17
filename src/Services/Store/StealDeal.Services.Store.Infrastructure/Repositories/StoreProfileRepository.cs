@@ -47,5 +47,10 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
         {
             _context.StoreProfiles.Update(entity);
         }
+
+        public async Task<IEnumerable<StoreProfile>> GetPendingVerificationAsync()
+        {
+            return await _context.StoreProfiles.Where(s => s.IsVerify == false).OrderBy(s => s.CreatedAt).ToListAsync();
+        }
     }
 }

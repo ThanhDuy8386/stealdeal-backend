@@ -9,6 +9,7 @@ namespace StealDeal.Services.Store.Domain.Interfaces
         Task<StoreProfile?> GetByOwnerIdAsync(Guid ownerId);
         Task<bool> ExistsByOwnerIdAsync(Guid ownerId);
         Task<IEnumerable<StoreProfile>> GetAllAsync();
+        Task<IEnumerable<StoreProfile>> GetPendingVerificationAsync();
         void Update(StoreProfile entity);
     }
 }
