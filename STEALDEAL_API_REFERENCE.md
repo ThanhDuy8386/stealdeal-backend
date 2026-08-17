@@ -320,6 +320,7 @@ permissions, including the ability to manage accounts with either admin role.
 | `PUT` | `/api/categories/{id}` | Admin | `UpdateCategoryRequest` | `200 CategoryResponse` |
 | `DELETE` | `/api/categories/{id}` | Admin | none | `204 NoContent` |
 | `GET` | `/api/stores` | Public | none | `200 StoreProfileResponse[]` |
+| `GET` | `/api/stores/pending` | Admin or SuperAdmin | none | `200 StoreProfileResponse[]` |
 | `GET` | `/api/stores/{id}` | Public | none | `200 StoreProfileResponse` |
 | `GET` | `/api/stores/me` | Seller | none | `200 StoreProfileResponse` |
 | `POST` | `/api/stores` | Seller | `CreateStoreRequest` | `201 StoreProfileResponse` |
@@ -341,6 +342,9 @@ permissions, including the ability to manage accounts with either admin role.
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
+
+`GET /api/stores/pending` returns all stores where `isVerify` is `false`,
+ordered from oldest to newest by `createdAt`. The endpoint is not paginated.
 
 ### Requests
 

@@ -82,6 +82,14 @@ namespace StealDeal.Services.Store.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("pending")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> GetPendingVerification()
+        {
+            var result = await _storeService.GetPendingVerificationAsync();
+            return Ok(result);
+        }
+
         private Guid GetCurrentUserId()
         {
             var sub = User.FindFirstValue(ClaimTypes.NameIdentifier)

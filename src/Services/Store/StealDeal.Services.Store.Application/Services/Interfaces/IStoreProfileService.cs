@@ -10,7 +10,7 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
         Task<StoreProfileResponse> GetByIdAsync(Guid id);
         Task<StoreProfileResponse> GetMyStoreAsync(Guid ownerId);
         Task<List<StoreProfileResponse>> GetAllAsync();
-
+        Task<List<StoreProfileResponse>> GetPendingVerificationAsync();
         // Admin only
         Task VerifyStoreAsync(Guid storeId);
         Task ToggleActiveAsync(Guid storeId);

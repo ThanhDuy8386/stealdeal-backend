@@ -4,6 +4,7 @@ using StealDeal.Services.Store.Application.Exceptions;
 using StealDeal.Services.Store.Application.Mappings;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
+using StealDeal.Services.Store.Domain.Models;
 
 namespace StealDeal.Services.Store.Application.Services
 {
@@ -99,6 +100,12 @@ namespace StealDeal.Services.Store.Application.Services
 
             _storeRepository.Update(store);
             await _unitOfWork.SaveChangesAsync();
+        }
+
+        public async Task<List<StoreProfileResponse>> GetPendingVerificationAsync()
+        {
+            var pendingStores = await _storeRepository.GetPendingVerificationAsync();
+            return pendingStores.Select(s => s.ToResponse()).ToList();
         }
     }
 }
