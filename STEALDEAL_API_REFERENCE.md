@@ -320,7 +320,7 @@ permissions, including the ability to manage accounts with either admin role.
 | `PUT` | `/api/categories/{id}` | Admin | `UpdateCategoryRequest` | `200 CategoryResponse` |
 | `DELETE` | `/api/categories/{id}` | Admin | none | `204 NoContent` |
 | `GET` | `/api/stores` | Public | none | `200 StoreProfileResponse[]` |
-| `GET` | `/api/stores/pending` | Admin or SuperAdmin | none | `200 StoreProfileResponse[]` |
+| `GET` | `/api/stores/pending` | Admin or SuperAdmin | none | `200 PendingStoreResponse[]` |
 | `GET` | `/api/stores/{id}` | Public | none | `200 StoreProfileResponse` |
 | `GET` | `/api/stores/me` | Seller | none | `200 StoreProfileResponse` |
 | `POST` | `/api/stores` | Seller | `CreateStoreRequest` | `201 StoreProfileResponse` |
@@ -435,6 +435,22 @@ export interface StoreProfileResponse {
   avatarUrl: string | null;
   phone: string | null;
   ratingScore: number;
+  isVerify: boolean;
+  isActive: boolean;
+  createdAt: ISODateTime;
+}
+
+export interface PendingStoreResponse {
+  id: UUID;
+  ownerId: UUID;
+  name: string;
+  description: string | null;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  phone: string | null;
+  avatarUrl: string | null;
+  licenseUrl: string | null;
   isVerify: boolean;
   isActive: boolean;
   createdAt: ISODateTime;
