@@ -1,9 +1,12 @@
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.DTOs.Responses;
+using StealDeal.Services.Store.Application.DTOs.Events;
+using StealDeal.Services.Store.Domain.Models;
 using StealDeal.Services.Store.Application.Exceptions;
 using StealDeal.Services.Store.Application.Mappings;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
+using System.Text.Json;
 
 namespace StealDeal.Services.Store.Application.Services
 {
@@ -11,13 +14,16 @@ namespace StealDeal.Services.Store.Application.Services
     {
         private readonly IStoreProfileRepository _storeRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IOutboxMessageRepository _outboxMessageRepository;
 
         public StoreProfileService(
             IStoreProfileRepository storeRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IOutboxMessageRepository outboxMessageRepository)
         {
             _storeRepository = storeRepository;
             _unitOfWork = unitOfWork;
+            _outboxMessageRepository = outboxMessageRepository;
         }
 
         public async Task<StoreProfileResponse> CreateAsync(Guid ownerId, CreateStoreRequest request)
@@ -80,11 +86,32 @@ namespace StealDeal.Services.Store.Application.Services
             var store = await _storeRepository.GetByIdAsync(storeId);
             if (store is null)
                 throw new NotFoundException("Store not found.");
+            if (store.IsVerify)
+            {
+                return;
+            }
 
             store.IsVerify = true;
             store.UpdatedAt = DateTime.UtcNow;
 
+            var payload = JsonSerializer.Serialize(new StoreVerifiedEvent
+            {
+                StoreId = storeId,
+                OwnerId = store.OwnerId,
+            });
+
+            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            {
+                ExchangeName = "stealdeal.events",
+                ExchangeType = "topic",
+                RoutingKey = "store.verified",
+                EventType = "StoreVerifiedEvent",
+                Payload = payload,
+                Status = "Pending"
+            });
+
             _storeRepository.Update(store);
+            //saves StoreProfile and OutboxMessage together
             await _unitOfWork.SaveChangesAsync();
         }
 

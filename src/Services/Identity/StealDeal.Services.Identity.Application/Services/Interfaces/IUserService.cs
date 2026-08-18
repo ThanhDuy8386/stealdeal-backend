@@ -13,6 +13,6 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
         Task<UserDetailResponse> GetUserDetail(Guid id);
         Task UpdateUser(Guid id, AdminUpdateUserRequest request);
         Task DeleteUser(Guid id);
-
+        Task PromoteToSeller(Guid id);
     }
 }

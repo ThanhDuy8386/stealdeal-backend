@@ -190,6 +190,37 @@ namespace StealDeal.Services.Identity.Application.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
+        public async Task PromoteToSeller(Guid id)
+        {
+            var user = await _userRepository.GetByIdAsync(id);
+
+            if (user is null || user.IsDeleted)
+            {
+                throw new NotFoundException("User not found.");
+            }
+
+            if (!user.IsActive)
+            {
+                throw new BadRequestException("Inactive users cannot become sellers.");
+            }
+
+            var sellerRole = await _roleRepository.GetByNameAsync("Seller");
+
+            if (sellerRole is null)
+            {
+                throw new BadRequestException("Seller role does not exist.");
+            }
+
+            var alreadySeller = user.Roles.Any(role => role.Name.Equals("Seller", StringComparison.OrdinalIgnoreCase));
+
+            if(!alreadySeller)
+            {
+                user.Roles.Add(sellerRole);
+                _userRepository.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+
         private static List<string> NormalizeRoles(List<string>? roles)
         {
             if (roles == null || roles.Count == 0)

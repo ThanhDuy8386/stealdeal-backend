@@ -43,9 +43,9 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // POST api/stores  [Seller only]
+        // POST api/stores  [Customer or Seller]
         [HttpPost]
-        [Authorize(Roles = "Seller")]
+        [Authorize(Roles = "Customer,Seller")]
         public async Task<IActionResult> Create([FromBody] CreateStoreRequest request)
         {
             var ownerId = GetCurrentUserId();
@@ -66,7 +66,7 @@ namespace StealDeal.Services.Store.API.Controllers
 
         // PATCH api/stores/{id}/verify  [Admin only]
         [HttpPatch("{id:guid}/verify")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> Verify(Guid id)
         {
             await _storeService.VerifyStoreAsync(id);
