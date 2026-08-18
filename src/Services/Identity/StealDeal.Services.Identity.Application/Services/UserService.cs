@@ -213,11 +213,10 @@ namespace StealDeal.Services.Identity.Application.Services
 
             var alreadySeller = user.Roles.Any(role => role.Name.Equals("Seller", StringComparison.OrdinalIgnoreCase));
 
-            if(!alreadySeller)
+            if (!alreadySeller)
             {
                 user.Roles.Add(sellerRole);
                 _userRepository.Update(user);
-                await _unitOfWork.SaveChangesAsync();
             }
         }
 

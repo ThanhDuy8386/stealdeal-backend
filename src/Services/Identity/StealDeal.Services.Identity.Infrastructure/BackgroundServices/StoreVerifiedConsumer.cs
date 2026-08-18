@@ -35,64 +35,56 @@ public class StoreVerifiedConsumer : BackgroundService
     }
 
     protected override async Task ExecuteAsync(
-        CancellationToken stoppingToken)
+        CancellationToken cancellationToken)
     {
-        var factory = new ConnectionFactory
-        {
-            HostName = _rabbitSettings.HostName,
-            Port = _rabbitSettings.Port,
-            UserName = _rabbitSettings.UserName,
-            Password = _rabbitSettings.Password,
-            AutomaticRecoveryEnabled = true,
-            TopologyRecoveryEnabled = true
-        };
-
-        _connection = await factory.CreateConnectionAsync(stoppingToken);
-        _channel = await _connection.CreateChannelAsync(
-            cancellationToken: stoppingToken);
-
-        await _channel.ExchangeDeclareAsync(
-            exchange: _consumerSettings.ExchangeName,
-            type: _consumerSettings.ExchangeType,
-            durable: true,
-            autoDelete: false,
-            arguments: null,
-            cancellationToken: stoppingToken);
-
-        await _channel.QueueDeclareAsync(
-            queue: _consumerSettings.QueueName,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null,
-            cancellationToken: stoppingToken);
-
-        await _channel.QueueBindAsync(
-            queue: _consumerSettings.QueueName,
-            exchange: _consumerSettings.ExchangeName,
-            routingKey: _consumerSettings.BindingKey,
-            cancellationToken: stoppingToken);
-
-        await _channel.BasicQosAsync(
-            prefetchSize: 0,
-            prefetchCount: _consumerSettings.PrefetchCount,
-            global: false,
-            cancellationToken: stoppingToken);
-
-        var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.ReceivedAsync += HandleMessageAsync;
-
-        await _channel.BasicConsumeAsync(
-            queue: _consumerSettings.QueueName,
-            autoAck: false,
-            consumer: consumer,
-            cancellationToken: stoppingToken);
+        var retryCount = 0;
 
         _logger.LogInformation(
-            "StoreVerifiedConsumer listening on {QueueName}.",
-            _consumerSettings.QueueName);
+            "StoreVerifiedConsumer started.");
 
-        await Task.Delay(Timeout.Infinite, stoppingToken);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await StartConsumerAsync(cancellationToken);
+
+                retryCount = 0;
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                retryCount++;
+
+                if (retryCount <= _consumerSettings.MaxRetryCount)
+                {
+                    _logger.LogError(
+                        ex,
+                        "RabbitMQ connection failed. " +
+                        "Retry {RetryCount} of {MaxRetryCount}.",
+                        retryCount,
+                        _consumerSettings.MaxRetryCount);
+                }
+
+                if (retryCount >= _consumerSettings.MaxRetryCount)
+                {
+                    _logger.LogCritical(
+                        "RabbitMQ connection failed after {MaxRetryCount} attempts. " +
+                        "StoreVerifiedConsumer will stop retrying.",
+                        _consumerSettings.MaxRetryCount);
+
+                    break;
+                }
+            }
+
+            await Task.Delay(
+                TimeSpan.FromSeconds(
+                    _consumerSettings.ReconnectDelaySeconds),
+                cancellationToken);
+        }
     }
 
     private async Task HandleMessageAsync(
@@ -165,5 +157,64 @@ public class StoreVerifiedConsumer : BackgroundService
             await _connection.CloseAsync(cancellationToken);
 
         await base.StopAsync(cancellationToken);
+    }
+
+    private async Task StartConsumerAsync(CancellationToken cancellationToken)
+    {
+        var factory = new ConnectionFactory
+        {
+            HostName = _rabbitSettings.HostName,
+            Port = _rabbitSettings.Port,
+            UserName = _rabbitSettings.UserName,
+            Password = _rabbitSettings.Password,
+            AutomaticRecoveryEnabled = true,
+            TopologyRecoveryEnabled = true
+        };
+
+        _connection = await factory.CreateConnectionAsync(cancellationToken);
+        _channel = await _connection.CreateChannelAsync(
+            cancellationToken: cancellationToken);
+
+        await _channel.ExchangeDeclareAsync(
+            exchange: _consumerSettings.ExchangeName,
+            type: _consumerSettings.ExchangeType,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await _channel.QueueDeclareAsync(
+            queue: _consumerSettings.QueueName,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await _channel.QueueBindAsync(
+            queue: _consumerSettings.QueueName,
+            exchange: _consumerSettings.ExchangeName,
+            routingKey: _consumerSettings.BindingKey,
+            cancellationToken: cancellationToken);
+
+        await _channel.BasicQosAsync(
+            prefetchSize: 0,
+            prefetchCount: _consumerSettings.PrefetchCount,
+            global: false,
+            cancellationToken: cancellationToken);
+
+        var consumer = new AsyncEventingBasicConsumer(_channel);
+        consumer.ReceivedAsync += HandleMessageAsync;
+
+        await _channel.BasicConsumeAsync(
+            queue: _consumerSettings.QueueName,
+            autoAck: false,
+            consumer: consumer,
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation(
+            "StoreVerifiedConsumer listening on {QueueName}.",
+            _consumerSettings.QueueName);
+        await Task.Delay(Timeout.Infinite, cancellationToken);
     }
 }

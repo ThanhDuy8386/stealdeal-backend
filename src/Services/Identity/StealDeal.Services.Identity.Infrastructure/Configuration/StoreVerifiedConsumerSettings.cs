@@ -11,5 +11,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Configuration
         public string QueueName { get; set; } = "identity.store-verified";
         public string BindingKey { get; set; } = "store.verified";
         public ushort PrefetchCount { get; set; } = 10;
+        public int ReconnectDelaySeconds { get; set; } = 10;
+        public int MaxRetryCount { get; set; } = 5;
     }
 }

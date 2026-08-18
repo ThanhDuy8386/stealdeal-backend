@@ -18,6 +18,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -146,6 +147,27 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.EventType).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Payload).IsRequired();
+            });
+
+            // ProcessedMessages Configuration
+            modelBuilder.Entity<ProcessedMessage>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.ConsumerName)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.EventType)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.HasIndex(x => new
+                {
+                    x.MessageId,
+                    x.ConsumerName
+                })
+                .IsUnique();
             });
         }
     }
