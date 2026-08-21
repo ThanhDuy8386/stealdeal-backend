@@ -11,5 +11,6 @@ namespace StealDeal.Services.Store.Domain.Interfaces
         Task<IEnumerable<StoreProfile>> GetAllAsync();
         Task<IEnumerable<StoreProfile>> GetPendingVerificationAsync();
         void Update(StoreProfile entity);
+        void Delete(StoreProfile entity);
     }
 }

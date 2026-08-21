@@ -326,6 +326,7 @@ permissions, including the ability to manage accounts with either admin role.
 | `POST` | `/api/stores` | Seller | `CreateStoreRequest` | `201 StoreProfileResponse` |
 | `PUT` | `/api/stores/{id}` | Owning Seller | `UpdateStoreRequest` | `200 StoreProfileResponse` |
 | `PATCH` | `/api/stores/{id}/verify` | Admin | none | `204 NoContent` |
+| `DELETE` | `/api/stores/{id}/reject` | Admin or SuperAdmin | none | `204 NoContent` |
 | `PATCH` | `/api/stores/{id}/toggle-active` | Admin | none | `204 NoContent` |
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
@@ -345,6 +346,11 @@ verify that the seller owns the bag.
 
 `GET /api/stores/pending` returns all stores where `isVerify` is `false`,
 ordered from oldest to newest by `createdAt`. The endpoint is not paginated.
+
+`DELETE /api/stores/{id}/reject` rejects and hard deletes an unverified pending store
+registration (`isVerify == false`), freeing up the seller owner account so they can register
+a new store. If the store is already verified or not found, it returns `400 Bad Request`
+or `404 Not Found`.
 
 ### Requests
 
