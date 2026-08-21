@@ -73,6 +73,15 @@ namespace StealDeal.Services.Store.API.Controllers
             return NoContent();
         }
 
+        // DELETE api/stores/{id}/reject  [Admin or SuperAdmin]
+        [HttpDelete("{id:guid}/reject")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> RejectPendingStore(Guid id)
+        {
+            await _storeService.RejectPendingStoreAsync(id);
+            return NoContent();
+        }
+
         // PATCH api/stores/{id}/toggle-active  [Admin only]
         [HttpPatch("{id:guid}/toggle-active")]
         [Authorize(Roles = "Admin")]

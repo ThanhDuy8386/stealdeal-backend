@@ -13,6 +13,7 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
         Task<List<PendingStoreResponse>> GetPendingVerificationAsync();
         // Admin only
         Task VerifyStoreAsync(Guid storeId);
+        Task RejectPendingStoreAsync(Guid storeId);
         Task ToggleActiveAsync(Guid storeId);
     }
 }

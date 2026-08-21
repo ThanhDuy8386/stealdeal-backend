@@ -115,6 +115,19 @@ namespace StealDeal.Services.Store.Application.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
+        public async Task RejectPendingStoreAsync(Guid storeId)
+        {
+            var store = await _storeRepository.GetByIdAsync(storeId);
+            if (store is null)
+                throw new NotFoundException("Store not found.");
+
+            if (store.IsVerify)
+                throw new BadRequestException("Cannot reject a store that has already been verified.");
+
+            _storeRepository.Delete(store);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         public async Task ToggleActiveAsync(Guid storeId)
         {
             var store = await _storeRepository.GetByIdAsync(storeId);
