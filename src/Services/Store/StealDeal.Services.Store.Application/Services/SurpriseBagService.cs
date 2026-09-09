@@ -13,17 +13,20 @@ namespace StealDeal.Services.Store.Application.Services
         private readonly IStoreProfileRepository _storeRepository;
         private readonly ICategoryRepository _categoryRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IS3StorageService _s3StorageService;
 
         public SurpriseBagService(
             ISurpriseBagRepository bagRepository,
             IStoreProfileRepository storeRepository,
             ICategoryRepository categoryRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IS3StorageService s3StorageService)
         {
             _bagRepository = bagRepository;
             _storeRepository = storeRepository;
             _categoryRepository = categoryRepository;
             _unitOfWork = unitOfWork;
+            _s3StorageService = s3StorageService;
         }
 
         public async Task<SurpriseBagResponse> CreateAsync(Guid ownerId, CreateBagRequest request)

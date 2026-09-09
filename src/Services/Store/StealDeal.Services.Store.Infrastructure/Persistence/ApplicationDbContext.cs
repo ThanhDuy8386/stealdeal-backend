@@ -57,6 +57,7 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
                 entity.Property(e => e.OriginalPrice).HasPrecision(18, 2);
                 entity.Property(e => e.SalePrice).HasPrecision(18, 2);
                 entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.ImageUrl).HasMaxLength(1000);
 
                 entity.HasIndex(e => e.StoreId);
                 entity.HasIndex(e => e.Status);
