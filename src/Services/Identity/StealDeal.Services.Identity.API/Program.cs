@@ -16,6 +16,7 @@ using StealDeal.Services.Identity.Application.DTOs.Events;
 using StealDeal.Services.Identity.Application.EventHandlers;
 using StealDeal.Services.Identity.Application.Messaging;
 using System.Text;
+using StealDeal.Services.Identity.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,7 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<StoreVerifiedConsumerSettings>(builder.Configuration.GetSection("StoreVerifiedConsumer"));
+builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
 
 // Dependency Injection for Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -49,9 +51,13 @@ builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 builder.Services.AddScoped<IIntegrationEventHandler<StoreVerifiedEvent>, StoreVerifiedEventHandler>();
 
+builder.Services.AddScoped<IS3StorageService, S3StorageService>();
+
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<OutboxMessageProcessor>();
 builder.Services.AddHostedService<StoreVerifiedConsumer>();
+
+
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

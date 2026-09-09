@@ -85,6 +85,7 @@ temporary implementation bypass; see the gap report before integrating it.
 | `POST` | `/api/admin-auth/logout` | Admin refresh cookie optional | none | `200 MessageResponse` |
 | `GET` | `/api/account/profile` | Bearer | none | `200 UserDetailResponse` |
 | `PUT` | `/api/account/profile` | Bearer | `UpdateMyProfileRequest` | `200 UserDetailResponse` |
+| `POST` | `/api/account/avatar` | Bearer | `multipart/form-data` (`file: File`) | `200 UserDetailResponse` |
 | `PUT` | `/api/account/password` | Bearer | `ChangePasswordRequest` | `204 NoContent` |
 | `POST` | `/api/user` | Admin or SuperAdmin | `AdminCreateUserRequest` | `200 UserDetailResponse` |
 | `GET` | `/api/user` | Admin or SuperAdmin | `GetUsersQueryRequest` query | `200 PagedResult<UserResponse>` |
@@ -331,8 +332,8 @@ permissions, including the ability to manage accounts with either admin role.
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
 | `GET` | `/api/bags/store/{storeId}` | Public | none | `200 SurpriseBagResponse[]` |
-| `POST` | `/api/bags` | Seller | `CreateBagRequest` | `201 SurpriseBagResponse` |
-| `PUT` | `/api/bags/{id}` | Owning Seller | `UpdateBagRequest` | `200 SurpriseBagResponse` |
+| `POST` | `/api/bags` | Seller | `multipart/form-data` (`CreateBagRequest` + optional `image: File`) | `201 SurpriseBagResponse` |
+| `PUT` | `/api/bags/{id}` | Owning Seller | `multipart/form-data` (`UpdateBagRequest` + optional `image: File`) | `200 SurpriseBagResponse` |
 | `DELETE` | `/api/bags/{id}` | Seller | none | `204 NoContent` |
 | `PATCH` | `/api/bags/{id}/status` | Owning Seller | `UpdateBagStatusRequest` | `204 NoContent` |
 | `GET` | `/api/reviews/store/{storeId}` | Public | none | `200 StoreReviewResponse[]` |
@@ -343,6 +344,12 @@ permissions, including the ability to manage accounts with either admin role.
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
+
+`POST /api/bags` and `PUT /api/bags/{id}` consume `multipart/form-data`.
+The text/number fields are sent as form fields along with an optional `image`
+file (`File` object, max 5MB, JPEG/PNG/WebP). If `image` is attached, the
+backend validates it, uploads to AWS S3 under `surprise-bags/{storeId}/{bagId}`,
+and populates `imageUrl`.
 
 `GET /api/stores/pending` returns all stores where `isVerify` is `false`,
 ordered from oldest to newest by `createdAt`. The endpoint is not paginated.
@@ -381,6 +388,7 @@ export type UpdateStoreRequest = CreateStoreRequest;
 export interface CreateBagRequest {
   name: string;
   description?: string | null;
+  imageUrl?: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;
@@ -394,6 +402,7 @@ export interface CreateBagRequest {
 export interface UpdateBagRequest {
   name: string;
   description?: string | null;
+  imageUrl?: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;
@@ -468,6 +477,7 @@ export interface SurpriseBagResponse {
   storeName: string;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;

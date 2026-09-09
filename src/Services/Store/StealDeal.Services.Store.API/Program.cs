@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -15,6 +14,8 @@ using StealDeal.Services.Store.Infrastructure.Configuration;
 using StealDeal.Services.Store.Infrastructure.Messaging;
 using StealDeal.Services.Store.Infrastructure.Persistence;
 using StealDeal.Services.Store.Infrastructure.Repositories;
+using StealDeal.Services.Store.Infrastructure.Storage;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
+
+builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -48,6 +51,8 @@ builder.Services.Configure<OrderCreatedConsummerSettings>(
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<CreatedOrderConsumer>();
 builder.Services.AddHostedService<OutboxMessageProcessor>();
+
+builder.Services.AddScoped<IS3StorageService, S3StorageService>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
