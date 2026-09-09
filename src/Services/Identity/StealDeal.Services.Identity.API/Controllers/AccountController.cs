@@ -50,6 +50,20 @@ namespace StealDeal.Services.Identity.API.Controllers
             return NoContent();
         }
 
+        [HttpPost("avatar")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadAvatar(IFormFile? file, CancellationToken cancellationToken)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Uploaded file is empty.");
+            }
+            using var stream = file.OpenReadStream();
+            var result = await _accountService.UploadAvatarAsync(GetCurrentUserId(), stream, file.FileName, file.ContentType, file.Length, cancellationToken);
+
+            return Ok(result);
+        }
+
         private Guid GetCurrentUserId()
         {
             var subject = User.FindFirstValue(ClaimTypes.NameIdentifier)

@@ -14,17 +14,20 @@ namespace StealDeal.Services.Identity.Application.Services
         private readonly IRefreshTokenRepository _refreshTokenRepository;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IS3StorageService _s3StorageService;
 
         public AccountService(
             IUserRepository userRepository,
             IRefreshTokenRepository refreshTokenRepository,
             IPasswordHasher passwordHasher,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IS3StorageService s3StorageService)
         {
             _userRepository = userRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _passwordHasher = passwordHasher;
             _unitOfWork = unitOfWork;
+            _s3StorageService = s3StorageService;
         }
 
         public async Task<UserDetailResponse> GetProfileAsync(Guid userId)
@@ -93,6 +96,19 @@ namespace StealDeal.Services.Identity.Application.Services
         private static string? NormalizeOptional(string? value)
         {
             return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        public async Task<UserDetailResponse> UploadAvatarAsync(Guid userId, Stream fileStream, string originalFileName, string contentType, long fileSize, CancellationToken cancellationToken = default)
+        {
+            var user = await GetActiveUserAsync(userId);
+            var folder = $"avatars/{userId}";
+            var avatarUrl = await _s3StorageService.UploadImageAsync(fileStream, originalFileName, contentType, fileSize, folder, cancellationToken);
+
+            user.AvatarUrl = avatarUrl;
+            _userRepository.Update(user);
+
+            await _unitOfWork.SaveChangesAsync();
+            return user.ToUserDetailResponse();
         }
     }
 }

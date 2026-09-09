@@ -8,5 +8,6 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
         Task<UserDetailResponse> GetProfileAsync(Guid userId);
         Task<UserDetailResponse> UpdateProfileAsync(Guid userId, UpdateMyProfileRequest request);
         Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
+        Task<UserDetailResponse> UploadAvatarAsync(Guid userId, Stream fileStream, string originalFileName, string contentType, long fileSize, CancellationToken cancellationToken = default);
     }
 }
