@@ -8,8 +8,8 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
 {
     public interface ISurpriseBagService
     {
-        Task<SurpriseBagResponse> CreateAsync(Guid ownerId, CreateBagRequest request);
-        Task<SurpriseBagResponse> UpdateAsync(Guid bagId, Guid ownerId, UpdateBagRequest request);
+        Task<SurpriseBagResponse> CreateAsync(Guid ownerId, CreateBagRequest request, FileUploadRequest? image = null, CancellationToken cancellationToken = default);
+        Task<SurpriseBagResponse> UpdateAsync(Guid bagId, Guid ownerId, UpdateBagRequest request, FileUploadRequest? image = null, CancellationToken cancellationToken = default);
         Task DeleteAsync(Guid bagId);
         Task<SurpriseBagResponse> GetByIdAsync(Guid id);
         Task<List<SurpriseBagResponse>> GetAllAsync();        // có thể thêm filter/paging sau
