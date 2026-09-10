@@ -11,5 +11,7 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
         Task VerifyEmailOtpAsync(VerifyEmailOtpRequest request, CancellationToken cancellationToken = default);
         Task ResendOtpAsync(ResendOtpRequest request, CancellationToken cancellationToken = default);
         Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default);
+        Task RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default);
+        Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 }

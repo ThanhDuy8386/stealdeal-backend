@@ -19,14 +19,17 @@ namespace StealDeal.Services.Identity.Application.Services
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly IOutboxMessageRepository _outboxMessageRepository;
+        private readonly IPasswordResetRepository _passwordResetRepository;
+
         public AuthService(
             IUserRepository userRepository,
             IRoleRepository roleRepository,
             IEmailVerificationRepository emailVerificationRepository,
-            IRefreshTokenRepository refreshTokenRepository, 
-            IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
+            IRefreshTokenRepository refreshTokenRepository,
+            IUnitOfWork unitOfWork, IPasswordHasher passwordHasher,
             IJwtTokenGenerator jwtTokenGenerator,
-            IOutboxMessageRepository outboxMessageRepository)
+            IOutboxMessageRepository outboxMessageRepository,
+            IPasswordResetRepository passwordResetRepository)
         {
             _userRepository = userRepository;
             _roleRepository = roleRepository;
@@ -36,6 +39,7 @@ namespace StealDeal.Services.Identity.Application.Services
             _passwordHasher = passwordHasher;
             _jwtTokenGenerator = jwtTokenGenerator;
             _outboxMessageRepository = outboxMessageRepository;
+            _passwordResetRepository = passwordResetRepository;
         }
 
         public async Task<TokenResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -146,7 +150,7 @@ namespace StealDeal.Services.Identity.Application.Services
                 ResendCount = 0
             };
             user.EmailVerifications.Add(emailVerification);
-            
+
             // Outbox message for sending OTP email
             var payload = JsonSerializer.Serialize(new SendEmailVerificationOtpEvent
             {
@@ -192,7 +196,7 @@ namespace StealDeal.Services.Identity.Application.Services
 
             var normalizedEmail = NormalizeEmail(request.Email);
             var otpHash = HashOtp(request.Otp);
-            var verification  = await _emailVerificationRepository
+            var verification = await _emailVerificationRepository
                 .VerifyOtp(normalizedEmail, otpHash);
             if (verification is null)
             {
@@ -334,7 +338,10 @@ namespace StealDeal.Services.Identity.Application.Services
 
         private static string GenerateOtp()
         {
-            return Random.Shared.Next(100000, 1000000).ToString();
+            //return Random.Shared.Next(100000, 1000000).ToString();
+            return System.Security.Cryptography.RandomNumberGenerator
+                .GetInt32(100000, 1000000)
+                .ToString();
         }
 
         private static string HashOtp(string otp)
@@ -346,7 +353,7 @@ namespace StealDeal.Services.Identity.Application.Services
 
         public async Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default)
         {
-            if(string.IsNullOrWhiteSpace(refreshToken))
+            if (string.IsNullOrWhiteSpace(refreshToken))
             {
                 return;
             }
@@ -354,7 +361,7 @@ namespace StealDeal.Services.Identity.Application.Services
             var refreshTokenHash = _jwtTokenGenerator.HashRefreshToken(refreshToken);
             var storedToken = await _refreshTokenRepository.GetByTokenHashAsync(refreshTokenHash);
 
-            if(storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)
+            if (storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)
             {
                 return;
             }
@@ -363,6 +370,130 @@ namespace StealDeal.Services.Identity.Application.Services
             storedToken.RevokedAt = DateTime.UtcNow;
 
             _refreshTokenRepository.Update(storedToken);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        public async Task RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(request.Email))
+            {
+                throw new BadRequestException("Email is required.");
+            }
+
+            var email = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(email);
+
+            // Return normally to prevent account enumeration
+            if (user is null || user.IsDeleted || !user.IsActive)
+            {
+                return;
+            }
+
+            var activeReset = await _passwordResetRepository.GetActiveByUserIdAsync(user.Id);
+
+            // Treat the same endpoint as resend, with a 60-second cooldown.
+            if (activeReset is not null && activeReset.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
+            {
+                return;
+            }
+
+            if (activeReset is not null)
+            {
+                activeReset.RevokedAt = DateTime.UtcNow;
+                _passwordResetRepository.Update(activeReset);
+            }
+
+            var otp = GenerateOtp();
+
+            var expiresAt = DateTime.UtcNow.AddMinutes(10);
+
+            await _passwordResetRepository.AddAsync(new PasswordReset
+            {
+                UserId = user.Id,
+                OtpHash = _passwordHasher.Hash(otp),
+                ExpiresAt = expiresAt,
+            });
+
+            var payload = JsonSerializer.Serialize(
+                new SendPasswordResetOtpEvent
+                {
+                    UserId = user.Id,
+                    Email = user.Email,
+                    FullName = user.FullName,
+                    Otp = otp,
+                    ExpiresAt = expiresAt
+                });
+
+            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            {
+                ExchangeName = "stealdeal.events",
+                ExchangeType = "topic",
+                RoutingKey = "identity.user.password-reset.requested",
+                EventType = nameof(SendPasswordResetOtpEvent),
+                Payload = payload,
+                Status = "Pending"
+            });
+
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Otp))
+            {
+                throw new BadRequestException("Invalid or expired reset code.");
+            }
+
+            if (string.IsNullOrEmpty(request.NewPassword) || request.NewPassword.Length < 8)
+            {
+                throw new BadRequestException("Password must be at least 8 characters.");
+            }
+
+            var email = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(email);
+
+            if (user is null || user.IsDeleted || !user.IsActive)
+            {
+                throw new BadRequestException("Invalid or expired reset code.");
+            }
+
+            var reset = await _passwordResetRepository.GetActiveByUserIdAsync(user.Id);
+
+            if (reset is null || reset.AttemptCount >= 5)
+            {
+                throw new BadRequestException("Invalid or expired reset code.");
+            }
+
+            if (!_passwordHasher.Verify(reset.OtpHash, request.Otp.Trim()))
+            {
+                reset.AttemptCount++;
+                if (reset.AttemptCount >= 5)
+                {
+                    reset.RevokedAt = DateTime.UtcNow;
+                }
+
+                _passwordResetRepository.Update(reset);
+                await _unitOfWork.SaveChangesAsync();
+
+                throw new BadRequestException("Invalid or expired reset code.");
+            }
+
+            user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+            reset.ConsumedAt = DateTime.UtcNow;
+
+            var refreshTokens = await _refreshTokenRepository
+                .GetActiveRefreshTokensByUserIdAsync(user.Id);
+
+            foreach (var token in refreshTokens)
+            {
+                token.IsRevoked = true;
+                token.RevokedAt = DateTime.UtcNow;
+                _refreshTokenRepository.Update(token);
+            }
+
+            _userRepository.Update(user);
+            _passwordResetRepository.Update(reset);
+
             await _unitOfWork.SaveChangesAsync();
         }
     }

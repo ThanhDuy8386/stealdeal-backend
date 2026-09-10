@@ -23,5 +23,6 @@ namespace StealDeal.Services.Identity.Domain.Models
         public ICollection<TrustScoreEvent> TrustScoreEvents { get;  set; } = new List<TrustScoreEvent>();
         public ICollection<Role> Roles { get;  set; } = new List<Role>();
         public ICollection<EmailVerification> EmailVerifications { get; set; } = new List<EmailVerification>();
+        public ICollection<PasswordReset> PasswordResets { get; set; } = new List<PasswordReset>();
     }
 }

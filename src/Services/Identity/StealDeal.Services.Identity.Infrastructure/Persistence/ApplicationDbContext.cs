@@ -19,6 +19,7 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
         public DbSet<EmailVerification> EmailVerifications { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
         public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
+        public DbSet<PasswordReset> PasswordResets { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -168,6 +169,22 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                     x.ConsumerName
                 })
                 .IsUnique();
+            });
+
+            //PasswordResets Configuration
+            modelBuilder.Entity<PasswordReset>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+                entity.Property(x => x.OtpHash).IsRequired().HasMaxLength(500);
+                entity.Property(x => x.AttemptCount).HasDefaultValue(0);
+
+                entity.HasIndex(x => x.UserId);
+                entity.HasIndex(x => x.ExpiresAt);
+
+                entity.HasOne(x => x.User)
+                    .WithMany(x => x.PasswordResets)
+                    .HasForeignKey(x => x.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }
