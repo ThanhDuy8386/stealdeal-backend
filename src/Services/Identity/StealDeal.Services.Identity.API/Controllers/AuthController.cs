@@ -113,6 +113,35 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
             return Ok(new { message = "Logged out successfully." });
         }
 
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
+        {
+            await _authService.RequestPasswordResetAsync(request, cancellationToken);
+            return Accepted(new
+            {
+                message = "If an account exists for this email, a reset code has been sent."
+            });
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
+        {
+            await _authService.ResetPasswordAsync(request, cancellationToken);
+            Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Lax,
+                Path = "/api/auth",
+                IsEssential = true,
+            });
+
+            return Ok(new
+            {
+                message = "Password reset successfully."
+            });
+        }
+
         private void SetRefreshTokenCookie(TokenResponse tokenResponse)
         {
             Response.Cookies.Append(
