@@ -33,6 +33,7 @@ namespace StealDeal.Services.Payment.Application.Mappings
                 Id = transaction.Id,
                 OrderId = transaction.OrderId,
                 UserId = transaction.UserId,
+                StoreId = transaction.StoreId,
                 Amount = transaction.Amount,
                 PaymentMethod = transaction.PaymentMethod,
                 GatewayRef = transaction.GatewayRef,

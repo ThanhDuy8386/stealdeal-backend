@@ -34,6 +34,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddScoped<IPaymentCallbackService, PaymentCallbackService>();
 builder.Services.AddScoped<IIntegrationEventHandler<InventoryReservedEvent>, InventoryReservedEventHandler>();
 builder.Services.AddSingleton<IPaymentGateway, VnPayGateway>();
 builder.Services.AddSingleton<IPaymentGatewayFactory, PaymentGatewayFactory>();

@@ -5,6 +5,7 @@ using StealDeal.Services.Payment.Application.Messaging;
 using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Domain.Models;
+using System.Text.Json;
 
 namespace StealDeal.Services.Payment.Application.EventHandlers
 {
@@ -52,7 +53,9 @@ namespace StealDeal.Services.Payment.Application.EventHandlers
                 Id = Guid.NewGuid(),
                 OrderId = @event.OrderId,
                 UserId = @event.UserId,
+                StoreId = @event.StoreId,
                 Amount = @event.TotalAmount,
+                ReservedItemsJson = JsonSerializer.Serialize(@event.Items),
                 PaymentMethod = PaymentMethods.VnPay,
                 Status = TransactionStatuses.Pending,
                 CreatedAt = DateTime.UtcNow,

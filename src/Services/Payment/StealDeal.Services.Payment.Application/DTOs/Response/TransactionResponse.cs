@@ -24,6 +24,7 @@ namespace StealDeal.Services.Payment.Application.DTOs.Response
         public Guid Id { get; set; }
         public Guid OrderId { get; set; }
         public Guid UserId { get; set; }
+        public Guid? StoreId { get; set; }
         public decimal Amount { get; set; }
         public string PaymentMethod { get; set; } = null!;
         public string? GatewayRef { get; set; }

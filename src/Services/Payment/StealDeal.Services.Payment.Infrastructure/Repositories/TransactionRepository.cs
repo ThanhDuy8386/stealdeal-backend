@@ -37,6 +37,13 @@ namespace StealDeal.Services.Payment.Infrastructure.Repositories
                 .FirstOrDefaultAsync(t => t.OrderId == orderId);
         }
 
+        public async Task<Transaction?> GetByGatewayRefAsync(string gatewayRef)
+        {
+            return await _context.Transactions
+                .Include(t => t.Refunds)
+                .FirstOrDefaultAsync(t => t.GatewayRef == gatewayRef);
+        }
+
         public async Task<IEnumerable<Transaction>> GetByUserIdAsync(Guid userId)
         {
             return await _context.Transactions

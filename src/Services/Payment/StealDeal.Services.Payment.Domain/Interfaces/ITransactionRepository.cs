@@ -10,6 +10,7 @@ namespace StealDeal.Services.Payment.Domain.Interfaces
         Task AddAsync(Transaction transaction);
         Task<Transaction?> GetByIdAsync(Guid id);
         Task<Transaction?> GetByOrderIdAsync(Guid orderId);
+        Task<Transaction?> GetByGatewayRefAsync(string gatewayRef);
         Task<IEnumerable<Transaction>> GetByUserIdAsync(Guid userId);
         void Update(Transaction transaction);
     }
