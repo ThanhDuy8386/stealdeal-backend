@@ -31,6 +31,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IIntegrationEventHandler<SendEmailVerificationOtpEvent>, SendEmailVerificationOtpEventHandler>();
+builder.Services.AddScoped<IIntegrationEventHandler<SendPasswordResetOtpEvent>, SendPasswordResetOtpEventHandler>();
 
 // ── Email Sender ───────────────────────────────────────────
 builder.Services.Configure<BrevoSettings>(builder.Configuration.GetSection("Brevo"));
@@ -45,6 +46,9 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>((sp, client) =>
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<EmailVerificationConsumerSettings>(builder.Configuration.GetSection("EmailVerificationConsumer"));
 builder.Services.AddHostedService<EmailVerificationConsumer>();
+builder.Services.Configure<PasswordResetConsumerSettings>(
+    builder.Configuration.GetSection("PasswordResetConsumer"));
+builder.Services.AddHostedService<PasswordResetConsumer>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
