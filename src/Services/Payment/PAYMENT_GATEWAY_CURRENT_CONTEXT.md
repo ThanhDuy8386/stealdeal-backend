@@ -687,7 +687,7 @@ EventType = event name
 Status:
 
 ```text
-Not implemented.
+Implemented.
 ```
 
 Store service must consume:
@@ -696,7 +696,7 @@ Store service must consume:
 inventory.release_requested
 ```
 
-Suggested files:
+Implemented files:
 
 ```text
 Store/StealDeal.Services.Store.Application/DTOs/Events/InventoryReleaseRequestedEvent.cs
@@ -711,11 +711,13 @@ Handler flow:
 if ProcessedMessage exists:
     return
 
+group release items by SurpriseBagId
+validate quantity > 0
 for each item:
-    increase QuantityRemaining
+    atomically increase QuantityRemaining by quantity
 
 add ProcessedMessage
-save changes
+save changes in the same DB transaction
 ```
 
 Important:
@@ -723,6 +725,28 @@ Important:
 - Must be idempotent.
 - Duplicate `inventory.release_requested` must not add stock twice.
 - Use `ProcessedMessage` in the same DB save as the stock update.
+- Repository support added:
+
+```csharp
+Task<bool> TryReleaseQuantityAsync(
+    Guid surpriseBagId,
+    Guid storeId,
+    int quantity,
+    CancellationToken cancellationToken = default);
+```
+
+Registered in `Program.cs`:
+
+```csharp
+builder.Services.AddScoped<
+    IIntegrationEventHandler<InventoryReleaseRequestedEvent>,
+    InventoryReleaseRequestedEventHandler>();
+
+builder.Services.Configure<InventoryReleaseRequestedConsumerSettings>(
+    builder.Configuration.GetSection("InventoryReleaseRequestedConsumer"));
+
+builder.Services.AddHostedService<InventoryReleaseRequestedConsumer>();
+```
 
 Current trade-off:
 

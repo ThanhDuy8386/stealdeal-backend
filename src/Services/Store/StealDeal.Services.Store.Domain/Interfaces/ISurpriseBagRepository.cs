@@ -14,5 +14,6 @@ namespace StealDeal.Services.Store.Domain.Interfaces
         Task<IEnumerable<SurpriseBag>> GetAllAsync();
         Task<IEnumerable<SurpriseBag>> GetByStoreIdAsync(Guid storeId);
         Task<bool> TryReserveQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
+        Task<bool> TryReleaseQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
     }
 }
