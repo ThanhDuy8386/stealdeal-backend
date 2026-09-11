@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Domain.Models;
 using StealDeal.Services.Payment.Infrastructure.Persistence;
@@ -51,6 +52,21 @@ namespace StealDeal.Services.Payment.Infrastructure.Repositories
                 .Where(t => t.UserId == userId)
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
+        }
+
+        public async Task<List<Transaction>> GetExpiredPendingBatchAsync(
+            DateTime nowUtc,
+            int batchSize,
+            CancellationToken cancellationToken = default)
+        {
+            return await _context.Transactions
+                .Where(t =>
+                    t.Status == TransactionStatuses.Pending &&
+                    t.ExpiresAt.HasValue &&
+                    t.ExpiresAt.Value <= nowUtc)
+                .OrderBy(t => t.ExpiresAt)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken);
         }
 
         public void Update(Transaction transaction)

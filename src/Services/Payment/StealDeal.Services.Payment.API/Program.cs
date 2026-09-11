@@ -44,8 +44,10 @@ builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("R
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<VnPaySettings>(builder.Configuration.GetSection("VnPay"));
 builder.Services.Configure<InventoryReservedConsumerSettings>(builder.Configuration.GetSection("InventoryReservedConsumer"));
+builder.Services.Configure<PaymentExpirationSettings>(builder.Configuration.GetSection("PaymentExpiration"));
 builder.Services.AddHostedService<OutboxMessageProcessor>();
 builder.Services.AddHostedService<InventoryReservedConsumer>();
+builder.Services.AddHostedService<PaymentExpirationProcessor>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");

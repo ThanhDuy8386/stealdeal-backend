@@ -758,7 +758,7 @@ Current trade-off:
 Status:
 
 ```text
-Not implemented.
+Implemented.
 ```
 
 Why:
@@ -767,16 +767,19 @@ Why:
 - IPN may never arrive.
 - Reserved stock should not stay locked forever.
 
-Suggested file:
+Implemented file:
 
 ```text
 Payment/StealDeal.Services.Payment.Infrastructure/BackgroundServices/PaymentExpirationProcessor.cs
 ```
 
-Required repository support:
+Repository support added:
 
 ```csharp
-Task<List<Transaction>> GetExpiredPendingBatchAsync(DateTime nowUtc, int batchSize);
+Task<List<Transaction>> GetExpiredPendingBatchAsync(
+    DateTime nowUtc,
+    int batchSize,
+    CancellationToken cancellationToken = default);
 ```
 
 Flow:
@@ -789,19 +792,31 @@ add inventory.release_requested outbox
 save changes
 ```
 
-Recommended settings:
+Settings:
 
 ```text
 PaymentExpiration:
+  Enabled
   BatchSize
   PollingIntervalSeconds
 ```
 
+Registered in `Program.cs`:
+
+```csharp
+builder.Services.Configure<PaymentExpirationSettings>(
+    builder.Configuration.GetSection("PaymentExpiration"));
+
+builder.Services.AddHostedService<PaymentExpirationProcessor>();
+```
+
 Implementation note:
 
-- If Step 11 factory exists, reuse it here.
-- ReasonCode can be `PaymentExpired`.
-- Reason can be `Payment expired before gateway confirmation.`
+- Reuses `PaymentOutboxMessageFactory`.
+- ReasonCode is `PaymentExpired`.
+- Reason is `Payment expired before gateway confirmation.`
+- `payment.failed` lets Order update order status.
+- `inventory.release_requested` lets Store release reserved stock.
 
 ### Step 14 - Late Success After Compensation
 

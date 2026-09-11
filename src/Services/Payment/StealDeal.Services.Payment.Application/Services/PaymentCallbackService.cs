@@ -68,12 +68,14 @@ namespace StealDeal.Services.Payment.Application.Services
 
             if (callbackResult.IsSuccess)
             {
+                //Payment success but transaction status is refund_pending or refunded (refund was done)
                 if (IsRefundInProgressOrCompleted(transaction.Status))
                 {
                     return new VnPayIpnHandleResult("00", "Confirm success");
                 }
 
                 //Payment success but transaction was cancel -> refund step
+                //money was take but transaction was cancel -> need to refund
                 if (IsFailedOrExpired(transaction.Status))
                 {
                     await MarkLateSuccessForRefundAsync(transaction, callbackResult);
