@@ -25,6 +25,8 @@ namespace StealDeal.Services.Payment.Infrastructure.Persistence
                 entity.Property(t => t.Amount)
                     .HasPrecision(18, 2);
 
+                entity.Property(t => t.ReservedItemsJson);
+
                 entity.Property(t => t.PaymentMethod)
                     .IsRequired()
                     .HasMaxLength(50);
@@ -59,6 +61,7 @@ namespace StealDeal.Services.Payment.Infrastructure.Persistence
 
                 entity.HasIndex(t => t.OrderId);
                 entity.HasIndex(t => t.UserId);
+                entity.HasIndex(t => t.StoreId);
                 entity.HasIndex(t => t.GatewayRef)
                     .IsUnique()
                     .HasFilter("[GatewayRef] IS NOT NULL");

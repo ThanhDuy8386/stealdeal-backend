@@ -4,7 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StealDeal.Services.Payment.API.Middlewares;
+using StealDeal.Services.Payment.Application.DTOs.Events;
+using StealDeal.Services.Payment.Application.EventHandlers;
 using StealDeal.Services.Payment.Application.Gateways;
+using StealDeal.Services.Payment.Application.Messaging;
 using StealDeal.Services.Payment.Application.Services;
 using StealDeal.Services.Payment.Application.Services.Interfaces;
 using StealDeal.Services.Payment.Domain.Interfaces;
@@ -31,6 +34,8 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddScoped<IPaymentCallbackService, PaymentCallbackService>();
+builder.Services.AddScoped<IIntegrationEventHandler<InventoryReservedEvent>, InventoryReservedEventHandler>();
 builder.Services.AddSingleton<IPaymentGateway, VnPayGateway>();
 builder.Services.AddSingleton<IPaymentGatewayFactory, PaymentGatewayFactory>();
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
@@ -38,7 +43,11 @@ builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<VnPaySettings>(builder.Configuration.GetSection("VnPay"));
+builder.Services.Configure<InventoryReservedConsumerSettings>(builder.Configuration.GetSection("InventoryReservedConsumer"));
+builder.Services.Configure<PaymentExpirationSettings>(builder.Configuration.GetSection("PaymentExpiration"));
 builder.Services.AddHostedService<OutboxMessageProcessor>();
+builder.Services.AddHostedService<InventoryReservedConsumer>();
+builder.Services.AddHostedService<PaymentExpirationProcessor>();
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");

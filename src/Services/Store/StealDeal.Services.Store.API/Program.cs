@@ -44,12 +44,18 @@ builder.Services.AddScoped<IStoreProfileService, StoreProfileService>();
 builder.Services.AddScoped<ISurpriseBagService, SurpriseBagService>();
 builder.Services.AddScoped<IStoreReviewService, StoreReviewService>();
 builder.Services.AddScoped<IIntegrationEventHandler<CreateOrderEvent>, CreateOrderEventHandler>();
+builder.Services.AddScoped<
+    IIntegrationEventHandler<InventoryReleaseRequestedEvent>,
+    InventoryReleaseRequestedEventHandler>();
 
 builder.Services.Configure<OrderCreatedConsummerSettings>(
     builder.Configuration.GetSection("OrderCreatedConsumer"));
+builder.Services.Configure<InventoryReleaseRequestedConsumerSettings>(
+    builder.Configuration.GetSection("InventoryReleaseRequestedConsumer"));
 
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<CreatedOrderConsumer>();
+builder.Services.AddHostedService<InventoryReleaseRequestedConsumer>();
 builder.Services.AddHostedService<OutboxMessageProcessor>();
 
 builder.Services.AddScoped<IS3StorageService, S3StorageService>();

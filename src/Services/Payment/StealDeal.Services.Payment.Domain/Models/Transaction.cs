@@ -8,8 +8,10 @@ namespace StealDeal.Services.Payment.Domain.Models
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid OrderId { get; set; }
         public Guid UserId { get; set; }
+        public Guid? StoreId { get; set; }
 
         public decimal Amount { get; set; }
+        public string? ReservedItemsJson { get; set; }
 
         public string PaymentMethod { get; set; } = null!; // Ví dụ: "VNPAY", "MOMO", "COD", "STRIPE"
         public string? GatewayRef { get; set; } // Mã tham chiếu từ cổng thanh toán, cho phép null nếu chưa thanh toán hoặc thanh toán COD
