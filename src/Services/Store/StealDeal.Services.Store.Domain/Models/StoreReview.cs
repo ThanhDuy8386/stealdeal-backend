@@ -7,11 +7,13 @@ namespace StealDeal.Services.Store.Domain.Models
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid OrderId { get; set; }
         public Guid BuyerId { get; set; }
+        public string BuyerName { get; set; } = null!;
         public Guid StoreId { get; set; }
         public Guid BagId { get; set; }
         public int RatingScore { get; set; }
         public string? Comment { get; set; }
         public string? StoreReply { get; set; }
+        public DateTime? RepliedAt { get; set; }
         public bool IsReported { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

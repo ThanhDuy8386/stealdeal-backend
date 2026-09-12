@@ -16,6 +16,7 @@ namespace StealDeal.Services.Store.Domain.Models
         public string? Phone { get; set; }
         public string? BankAccount { get; set; }
         public decimal RatingScore { get; set; }
+        public int ReviewCount { get; set; } = 0;
         public string? LicenseUrl { get; set; }
         public bool IsVerify { get; set; }
         public bool IsActive { get; set; }
