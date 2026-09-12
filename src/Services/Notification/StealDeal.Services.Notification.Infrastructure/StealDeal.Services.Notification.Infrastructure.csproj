@@ -12,8 +12,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Folder Include="BackgroundServices\" />
-		<Folder Include="Configuration\" />
 		<Folder Include="Messaging\" />
 		<Folder Include="Repositories\" />
 		<Folder Include="Persistence\" />

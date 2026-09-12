@@ -7,12 +7,13 @@ namespace StealDeal.Services.Store.Application.Mappings
     public static class StoreReviewMapping
     {
         // CreateRequest -> new Entity
-        public static StoreReview ToEntity(this CreateReviewRequest request, Guid buyerId, Guid storeId)
+        public static StoreReview ToEntity(this CreateReviewRequest request, Guid buyerId, string buyerName, Guid storeId)
         {
             return new StoreReview
             {
                 OrderId = request.OrderId,
                 BuyerId = buyerId,
+                BuyerName = buyerName,
                 StoreId = storeId,
                 BagId = request.BagId,
                 RatingScore = request.RatingScore,
@@ -30,9 +31,14 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Id = review.Id,
                 OrderId = review.OrderId,
                 BuyerId = review.BuyerId,
+                BuyerName = review.BuyerName,
+                StoreId = review.StoreId,
+                BagId = review.BagId,
+                BagName = review.Bag?.Name,
                 RatingScore = review.RatingScore,
                 Comment = review.Comment,
                 StoreReply = review.StoreReply,
+                RepliedAt = review.RepliedAt,
                 CreatedAt = review.CreatedAt
             };
         }

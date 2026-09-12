@@ -14,6 +14,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 StoreId = storeId,
                 Name = request.Name.Trim(),
                 Description = request.Description?.Trim(),
+                ImageUrl = request.ImageUrl?.Trim(),
                 OriginalPrice = request.OriginalPrice,
                 SalePrice = request.SalePrice,
                 QuantityTotal = request.QuantityTotal,
@@ -31,6 +32,7 @@ namespace StealDeal.Services.Store.Application.Mappings
         {
             bag.Name = request.Name.Trim();
             bag.Description = request.Description?.Trim();
+            bag.ImageUrl = request.ImageUrl?.Trim();
             bag.OriginalPrice = request.OriginalPrice;
             bag.SalePrice = request.SalePrice;
             bag.QuantityTotal = request.QuantityTotal;
@@ -50,6 +52,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 StoreName = bag.Store?.Name ?? string.Empty,
                 Name = bag.Name,
                 Description = bag.Description,
+                ImageUrl = bag.ImageUrl,
                 OriginalPrice = bag.OriginalPrice,
                 SalePrice = bag.SalePrice,
                 QuantityTotal = bag.QuantityTotal,

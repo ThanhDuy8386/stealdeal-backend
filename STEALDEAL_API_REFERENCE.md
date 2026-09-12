@@ -85,6 +85,7 @@ temporary implementation bypass; see the gap report before integrating it.
 | `POST` | `/api/admin-auth/logout` | Admin refresh cookie optional | none | `200 MessageResponse` |
 | `GET` | `/api/account/profile` | Bearer | none | `200 UserDetailResponse` |
 | `PUT` | `/api/account/profile` | Bearer | `UpdateMyProfileRequest` | `200 UserDetailResponse` |
+| `POST` | `/api/account/avatar` | Bearer | `multipart/form-data` (`file: File`) | `200 UserDetailResponse` |
 | `PUT` | `/api/account/password` | Bearer | `ChangePasswordRequest` | `204 NoContent` |
 | `POST` | `/api/user` | Admin or SuperAdmin | `AdminCreateUserRequest` | `200 UserDetailResponse` |
 | `GET` | `/api/user` | Admin or SuperAdmin | `GetUsersQueryRequest` query | `200 PagedResult<UserResponse>` |
@@ -331,18 +332,24 @@ permissions, including the ability to manage accounts with either admin role.
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
 | `GET` | `/api/bags/store/{storeId}` | Public | none | `200 SurpriseBagResponse[]` |
-| `POST` | `/api/bags` | Seller | `CreateBagRequest` | `201 SurpriseBagResponse` |
-| `PUT` | `/api/bags/{id}` | Owning Seller | `UpdateBagRequest` | `200 SurpriseBagResponse` |
+| `POST` | `/api/bags` | Seller | `multipart/form-data` (`CreateBagRequest` + optional `image: File`) | `201 SurpriseBagResponse` |
+| `PUT` | `/api/bags/{id}` | Owning Seller | `multipart/form-data` (`UpdateBagRequest` + optional `image: File`) | `200 SurpriseBagResponse` |
 | `DELETE` | `/api/bags/{id}` | Seller | none | `204 NoContent` |
 | `PATCH` | `/api/bags/{id}/status` | Owning Seller | `UpdateBagStatusRequest` | `204 NoContent` |
-| `GET` | `/api/reviews/store/{storeId}` | Public | none | `200 StoreReviewResponse[]` |
-| `GET` | `/api/reviews/bag/{bagId}` | Public | none | `200 StoreReviewResponse[]` |
+| `GET` | `/api/reviews/store/{storeId}` | Public | `page?: number, pageSize?: number` query | `200 PagedResult<StoreReviewResponse>` |
+| `GET` | `/api/reviews/bag/{bagId}` | Public | `page?: number, pageSize?: number` query | `200 PagedResult<StoreReviewResponse>` |
 | `POST` | `/api/reviews` | Bearer | `CreateReviewRequest` | `201 StoreReviewResponse` |
 | `PATCH` | `/api/reviews/{id}/reply` | Owning Seller | `ReplyReviewRequest` | `204 NoContent` |
 | `PATCH` | `/api/reviews/{id}/report` | Bearer | none | `204 NoContent` |
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
+
+`POST /api/bags` and `PUT /api/bags/{id}` consume `multipart/form-data`.
+The text/number fields are sent as form fields along with an optional `image`
+file (`File` object, max 5MB, JPEG/PNG/WebP). If `image` is attached, the
+backend validates it, uploads to AWS S3 under `surprise-bags/{storeId}/{bagId}`,
+and populates `imageUrl`.
 
 `GET /api/stores/pending` returns all stores where `isVerify` is `false`,
 ordered from oldest to newest by `createdAt`. The endpoint is not paginated.
@@ -351,6 +358,17 @@ ordered from oldest to newest by `createdAt`. The endpoint is not paginated.
 registration (`isVerify == false`), freeing up the seller owner account so they can register
 a new store. If the store is already verified or not found, it returns `400 Bad Request`
 or `404 Not Found`.
+
+`GET /api/reviews/store/{storeId}` and `GET /api/reviews/bag/{bagId}` support optional query parameters
+`page` (default `1`) and `pageSize` (default `10`, clamped between `1` and `50`). Reviews are returned
+ordered from newest to oldest (`createdAt DESC`) wrapped in `PagedResult<StoreReviewResponse>`.
+
+`POST /api/reviews` enforces composite uniqueness on `(orderId, bagId)` (1 review per bag in an order),
+snapshots `buyerName` from token claims (`ClaimTypes.Name` / "Customer"), and incrementally updates
+the store's `ratingScore` and `reviewCount`.
+
+`PATCH /api/reviews/{id}/reply` allows the verified store owner to reply, saving `storeReply` and recording
+the timestamp in `repliedAt`.
 
 ### Requests
 
@@ -381,6 +399,7 @@ export type UpdateStoreRequest = CreateStoreRequest;
 export interface CreateBagRequest {
   name: string;
   description?: string | null;
+  imageUrl?: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;
@@ -394,6 +413,7 @@ export interface CreateBagRequest {
 export interface UpdateBagRequest {
   name: string;
   description?: string | null;
+  imageUrl?: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;
@@ -441,6 +461,7 @@ export interface StoreProfileResponse {
   avatarUrl: string | null;
   phone: string | null;
   ratingScore: number;
+  reviewCount: number;
   isVerify: boolean;
   isActive: boolean;
   createdAt: ISODateTime;
@@ -468,6 +489,7 @@ export interface SurpriseBagResponse {
   storeName: string;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   originalPrice: Money;
   salePrice: Money;
   quantityTotal: number;
@@ -484,9 +506,14 @@ export interface StoreReviewResponse {
   id: UUID;
   orderId: UUID;
   buyerId: UUID;
+  buyerName: string;
+  storeId: UUID;
+  bagId: UUID;
+  bagName: string | null;
   ratingScore: number;
   comment: string | null;
   storeReply: string | null;
+  repliedAt: ISODateTime | null;
   createdAt: ISODateTime;
 }
 ```
@@ -496,8 +523,7 @@ Important current omissions:
 - A store accepts `bankAccount` and `licenseUrl`, but `StoreProfileResponse`
   never returns them.
 - `avatarUrl` is returned but cannot be set by either store request.
-- A surprise bag has no image/media field in its model or DTO.
-- A review response omits its stored `storeId`, `bagId`, and `isReported`.
+- `isReported` is omitted from public review responses by design for moderation safety.
 
 ## 4. Order
 

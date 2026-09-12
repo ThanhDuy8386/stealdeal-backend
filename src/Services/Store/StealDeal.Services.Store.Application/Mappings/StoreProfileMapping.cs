@@ -21,6 +21,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 BankAccount = request.BankAccount?.Trim(),
                 LicenseUrl = request.LicenseUrl?.Trim(),
                 RatingScore = 0,
+                ReviewCount = 0,
                 IsVerify = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
@@ -56,6 +57,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 AvatarUrl = store.AvatarUrl,
                 Phone = store.Phone,
                 RatingScore = store.RatingScore,
+                ReviewCount = store.ReviewCount,
                 IsVerify = store.IsVerify,
                 IsActive = store.IsActive,
                 CreatedAt = store.CreatedAt

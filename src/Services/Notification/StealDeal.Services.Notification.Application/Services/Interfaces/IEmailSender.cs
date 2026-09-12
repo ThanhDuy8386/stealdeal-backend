@@ -12,5 +12,11 @@ namespace StealDeal.Services.Notification.Application.Services.Interfaces
         string otp,
         DateTime expiresAt,
         CancellationToken cancellationToken = default);
+        Task SendPasswordResetOtpAsync(
+            string toEmail,
+            string fullName,
+            string otp,
+            DateTime expiresAt,
+            CancellationToken cancellationToken = default);
     }
 }

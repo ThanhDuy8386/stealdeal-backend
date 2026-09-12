@@ -200,6 +200,11 @@ namespace StealDeal.Services.Store.Infrastructure.Migrations
                         .HasPrecision(3, 2)
                         .HasColumnType("decimal(3,2)");
 
+                    b.Property<int>("ReviewCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -223,6 +228,11 @@ namespace StealDeal.Services.Store.Infrastructure.Migrations
                     b.Property<Guid>("BuyerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("BuyerName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Comment")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -239,6 +249,9 @@ namespace StealDeal.Services.Store.Infrastructure.Migrations
                     b.Property<int>("RatingScore")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("RepliedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<Guid>("StoreId")
                         .HasColumnType("uniqueidentifier");
 
@@ -252,10 +265,10 @@ namespace StealDeal.Services.Store.Infrastructure.Migrations
 
                     b.HasIndex("BuyerId");
 
-                    b.HasIndex("OrderId")
-                        .IsUnique();
-
                     b.HasIndex("StoreId");
+
+                    b.HasIndex("OrderId", "BagId")
+                        .IsUnique();
 
                     b.ToTable("StoreReviews");
                 });
@@ -275,6 +288,10 @@ namespace StealDeal.Services.Store.Infrastructure.Migrations
 
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("Name")
                         .IsRequired()

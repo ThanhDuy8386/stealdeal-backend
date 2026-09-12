@@ -44,22 +44,44 @@ namespace StealDeal.Services.Store.API.Controllers
         // POST api/bags  [Seller only]
         [HttpPost]
         [Authorize(Roles = "Seller")]
-        public async Task<IActionResult> Create([FromBody] CreateBagRequest request)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Create([FromForm] CreateBagRequest request,
+            IFormFile? image,
+            CancellationToken cancellationToken)
         {
-            // Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7")
             var ownerId = GetCurrentUserId();
-            var result = await _bagService.CreateAsync(ownerId, request);
-            // var result = await _bagService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            FileUploadRequest? fileDto = null;
+            if (image != null && image.Length > 0)
+            {
+                fileDto = new FileUploadRequest(
+                    image.OpenReadStream(),
+                    image.FileName,
+                    image.ContentType,
+                    image.Length);
+            }
+            var result = await _bagService.CreateAsync(ownerId, request, fileDto, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
         // PUT api/bags/{id}  [Seller only]
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "Seller")]
-        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateBagRequest request)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Update(Guid id, [FromForm] UpdateBagRequest request,
+            IFormFile? image,
+            CancellationToken cancellationToken)
         {
             var ownerId = GetCurrentUserId();
-            var result = await _bagService.UpdateAsync(id, ownerId, request);
+            FileUploadRequest? fileDto = null;
+            if (image != null && image.Length > 0)
+            {
+                fileDto = new FileUploadRequest(
+                    image.OpenReadStream(),
+                    image.FileName,
+                    image.ContentType,
+                    image.Length);
+            }
+            var result = await _bagService.UpdateAsync(id, ownerId, request, fileDto, cancellationToken);
             return Ok(result);
         }
 

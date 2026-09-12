@@ -10,6 +10,7 @@ namespace StealDeal.Services.Store.Domain.Models
         public Guid StoreId { get; set; }
         public string Name { get; set; } = null!;
         public string? Description { get; set; }
+        public string? ImageUrl { get; set; }
         public decimal OriginalPrice { get; set; }
         public decimal SalePrice { get; set; }
         public int QuantityTotal { get; set; }

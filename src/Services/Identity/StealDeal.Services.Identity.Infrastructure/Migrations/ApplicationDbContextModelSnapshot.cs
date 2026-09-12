@@ -193,6 +193,46 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.ToTable("OutboxMessages");
                 });
 
+            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.PasswordReset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PasswordResets");
+                });
+
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.ProcessedMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -494,6 +534,17 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.PasswordReset", b =>
+                {
+                    b.HasOne("StealDeal.Services.Identity.Domain.Models.User", "User")
+                        .WithMany("PasswordResets")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.RefreshToken", b =>
                 {
                     b.HasOne("StealDeal.Services.Identity.Domain.Models.Admin", "Admin")
@@ -552,6 +603,8 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.User", b =>
                 {
                     b.Navigation("EmailVerifications");
+
+                    b.Navigation("PasswordResets");
 
                     b.Navigation("RefreshTokens");
 

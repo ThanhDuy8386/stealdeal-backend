@@ -4,6 +4,7 @@ using StealDeal.Services.Store.Application.Exceptions;
 using StealDeal.Services.Store.Application.Mappings;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
+using StealDeal.Services.Store.Domain.Models;
 
 namespace StealDeal.Services.Store.Application.Services
 {
@@ -13,20 +14,25 @@ namespace StealDeal.Services.Store.Application.Services
         private readonly IStoreProfileRepository _storeRepository;
         private readonly ICategoryRepository _categoryRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IS3StorageService _s3StorageService;
 
         public SurpriseBagService(
             ISurpriseBagRepository bagRepository,
             IStoreProfileRepository storeRepository,
             ICategoryRepository categoryRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IS3StorageService s3StorageService)
         {
             _bagRepository = bagRepository;
             _storeRepository = storeRepository;
             _categoryRepository = categoryRepository;
             _unitOfWork = unitOfWork;
+            _s3StorageService = s3StorageService;
         }
 
-        public async Task<SurpriseBagResponse> CreateAsync(Guid ownerId, CreateBagRequest request)
+        public async Task<SurpriseBagResponse> CreateAsync(Guid ownerId, CreateBagRequest request,
+            FileUploadRequest? image = null,
+            CancellationToken cancellationToken = default)
         {
             // Resolve store from owner
             var store = await _storeRepository.GetByOwnerIdAsync(ownerId);
@@ -36,17 +42,40 @@ namespace StealDeal.Services.Store.Application.Services
             if (!store.IsActive || !store.IsVerify)
                 throw new ForbiddenException("Your store must be verified and active to create bags.");
 
-            // Build entity
-            var bag = request.ToEntity(store.Id);
-
-            // Assign N:N categories
+            // Assign N:N categories & Validate categories
+            var categories = new List<Category>();
             foreach (var categoryId in request.CategoryIds)
             {
                 var category = await _categoryRepository.GetByIdAsync(categoryId);
                 if (category is null)
                     throw new BadRequestException($"Category '{categoryId}' not found.");
 
+                categories.Add(category);
+            }
+
+            // Build entity
+            var bag = request.ToEntity(store.Id);
+            // add categories to bag
+            foreach (var category in categories)
+            {
                 bag.Categories.Add(category);
+            }
+
+            // If an image was attached, upload it now under surprise-bags/{storeId}/{bagId}
+            if (image != null)
+            {
+                using (image.Stream)
+                {
+                    var folder = $"surprise-bags/{store.Id}/{bag.Id}";
+                    var imageUrl = await _s3StorageService.UploadImageAsync(
+                        image.Stream,
+                        image.FileName,
+                        image.ContentType,
+                        image.Length,
+                        folder,
+                        cancellationToken);
+                    bag.ImageUrl = imageUrl;
+                }
             }
 
             await _bagRepository.AddAsync(bag);
@@ -58,7 +87,9 @@ namespace StealDeal.Services.Store.Application.Services
             return bag.ToResponse();
         }
 
-        public async Task<SurpriseBagResponse> UpdateAsync(Guid bagId, Guid ownerId, UpdateBagRequest request)
+        public async Task<SurpriseBagResponse> UpdateAsync(Guid bagId, Guid ownerId, UpdateBagRequest request, 
+            FileUploadRequest? image = null,
+            CancellationToken cancellationToken = default)
         {
             var bag = await _bagRepository.GetByIdAsync(bagId);
             if (bag is null)
@@ -69,6 +100,23 @@ namespace StealDeal.Services.Store.Application.Services
                 throw new ForbiddenException("You do not own this bag.");
 
             request.UpdateEntity(bag);
+
+            // If a new image was uploaded, upload to S3 and update ImageUrl
+            if (image != null)
+            {
+                using (image.Stream)
+                {
+                    var folder = $"surprise-bags/{store.Id}/{bag.Id}";
+                    var imageUrl = await _s3StorageService.UploadImageAsync(
+                        image.Stream,
+                        image.FileName,
+                        image.ContentType,
+                        image.Length,
+                        folder,
+                        cancellationToken);
+                    bag.ImageUrl = imageUrl;
+                }
+            }
 
             // Re-assign categories if provided
             if (request.CategoryIds is { Count: > 0 })

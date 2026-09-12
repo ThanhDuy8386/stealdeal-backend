@@ -72,5 +72,54 @@ namespace StealDeal.Services.Notification.Infrastructure.EmailProvider
                 throw new InvalidOperationException($"Brevo email sending failed: {(int)response.StatusCode} {errorBody}");
             }
         }
+
+        public async Task SendPasswordResetOtpAsync(string toEmail, string fullName, string otp, DateTime expiresAt, CancellationToken cancellationToken = default)
+        {
+            var safeFullName = WebUtility.HtmlEncode(fullName);
+            var expiresAtText = expiresAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");
+
+            var payload = new
+            {
+                sender = new
+                {
+                    name = _settings.FromName,
+                    email = _settings.FromEmail
+                },
+                to = new[]
+                {
+                    new
+                    {
+                        email = toEmail,
+                        name = fullName
+                    }
+                },
+                subject = "Reset your Steal Deals password",
+                htmlContent = $"""
+                    <html>
+                      <body>
+                        <p>Hello {safeFullName},</p>
+                        <p>Your password reset code is:</p>
+                        <h2>{otp}</h2>
+                        <p>This code expires at {expiresAtText}.</p>
+                        <p>If you did not request a password reset, you can ignore this email.</p>
+                      </body>
+                    </html>
+                    """,
+                textContent = $"Hello {fullName}, your password reset code is {otp}. It expires at {expiresAtText}. "+"Ignore this email if you did not request a password reset.",
+                tags = new[] { "password-reset-otp" }
+            };
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/v3/smtp/email");
+            request.Headers.Add("api-key", _settings.ApiKey);
+            request.Content = JsonContent.Create(payload);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"Brevo email sending failed: {(int)response.StatusCode} {errorBody}");
+            }
+        }
     }
 }
