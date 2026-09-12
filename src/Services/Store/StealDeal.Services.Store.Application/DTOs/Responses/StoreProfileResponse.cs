@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -16,6 +16,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Responses
         public string? AvatarUrl { get; set; }
         public string? Phone { get; set; }
         public decimal RatingScore { get; set; }
+        public int ReviewCount { get; set; }
         public bool IsVerify { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }

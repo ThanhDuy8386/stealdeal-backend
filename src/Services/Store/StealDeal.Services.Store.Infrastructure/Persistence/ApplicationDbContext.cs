@@ -45,6 +45,7 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
                 entity.Property(e => e.Phone).HasMaxLength(20);
                 entity.Property(e => e.BankAccount).HasMaxLength(50);
                 entity.Property(e => e.RatingScore).HasPrecision(3, 2);
+                entity.Property(e => e.ReviewCount).HasDefaultValue(0);
                 entity.Property(e => e.LicenseUrl).HasMaxLength(1000);
             });
 
@@ -76,13 +77,14 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
             modelBuilder.Entity<StoreReview>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.BuyerName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Comment).HasMaxLength(2000);
                 entity.Property(e => e.StoreReply).HasMaxLength(2000);
 
                 entity.HasIndex(e => e.StoreId);
                 entity.HasIndex(e => e.BagId);
                 entity.HasIndex(e => e.BuyerId);
-                entity.HasIndex(e => e.OrderId).IsUnique(); // 1 order = 1 review
+                entity.HasIndex(e => new { e.OrderId, e.BagId }).IsUnique(); // 1 review per bag in an order
 
                 entity.HasOne(e => e.Store)
                       .WithMany(s => s.StoreReviews)

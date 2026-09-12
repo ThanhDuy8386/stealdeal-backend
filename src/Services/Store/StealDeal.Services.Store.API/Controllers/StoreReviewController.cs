@@ -17,19 +17,25 @@ namespace StealDeal.Services.Store.API.Controllers
             _reviewService = reviewService;
         }
 
-        // GET api/reviews/store/{storeId}
+        // GET api/reviews/store/{storeId}?page=1&pageSize=10
         [HttpGet("store/{storeId:guid}")]
-        public async Task<IActionResult> GetByStore(Guid storeId)
+        public async Task<IActionResult> GetByStore(
+            Guid storeId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
-            var result = await _reviewService.GetByStoreIdAsync(storeId);
+            var result = await _reviewService.GetByStoreIdAsync(storeId, page, pageSize);
             return Ok(result);
         }
 
-        // GET api/reviews/bag/{bagId}
+        // GET api/reviews/bag/{bagId}?page=1&pageSize=10
         [HttpGet("bag/{bagId:guid}")]
-        public async Task<IActionResult> GetByBag(Guid bagId)
+        public async Task<IActionResult> GetByBag(
+            Guid bagId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
-            var result = await _reviewService.GetByBagIdAsync(bagId);
+            var result = await _reviewService.GetByBagIdAsync(bagId, page, pageSize);
             return Ok(result);
         }
 
@@ -39,7 +45,8 @@ namespace StealDeal.Services.Store.API.Controllers
         public async Task<IActionResult> Create([FromBody] CreateReviewRequest request)
         {
             var buyerId = GetCurrentUserId();
-            var result = await _reviewService.CreateAsync(buyerId, request);
+            var buyerName = GetCurrentUserName();
+            var result = await _reviewService.CreateAsync(buyerId, buyerName, request);
             return StatusCode(201, result);
         }
 
@@ -69,6 +76,13 @@ namespace StealDeal.Services.Store.API.Controllers
                       ?? User.FindFirstValue("sub");
 
             return Guid.Parse(sub!);
+        }
+
+        private string GetCurrentUserName()
+        {
+            return User.FindFirstValue(ClaimTypes.Name)
+                   ?? User.FindFirstValue("name")
+                   ?? "Customer";
         }
     }
 }
