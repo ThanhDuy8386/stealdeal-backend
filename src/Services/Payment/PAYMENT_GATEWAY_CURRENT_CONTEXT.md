@@ -823,7 +823,7 @@ Implementation note:
 Status:
 
 ```text
-Partially implemented in Step 10.
+Implemented at DB-record level.
 ```
 
 Current business decision:
@@ -841,6 +841,11 @@ if VNPAY IPN success arrives for Failed/Expired transaction:
     transaction.Status = RefundPending
     create Refund Pending
     do not publish payment.completed
+
+if VNPAY IPN success arrives again for RefundPending/Refunded transaction:
+    return RspCode 00
+    do not update transaction
+    do not publish payment.completed
 ```
 
 Still not implemented:
@@ -849,6 +854,7 @@ Still not implemented:
 - Refund query/status update.
 - Retry strategy for failed refund.
 - Mapping VNPAY refund response to `Refund.Status`.
+- Mapping final refund state back to `Transaction.Status = Refunded` or `RefundFailed`.
 
 Potential future files:
 
@@ -858,12 +864,32 @@ Payment/StealDeal.Services.Payment.Application/Services/RefundProcessingService.
 Payment/StealDeal.Services.Payment.Infrastructure/Gateways/VnPayRefundGateway.cs
 ```
 
+Future refund action note:
+
+```text
+Refund Pending currently means "money was captured after the saga had already failed/expired."
+The next implementation should process these Refund rows asynchronously:
+
+1. Find Refund Status = Pending.
+2. Call VNPAY refund API.
+3. Save GatewayRefundRef/GatewayResponseCode.
+4. If refund succeeds:
+   - Refund.Status = Processed
+   - Refund.ProcessedAt = UtcNow
+   - Transaction.Status = Refunded
+5. If refund fails:
+   - Refund.Status = Failed
+   - Refund.FailureReason = gateway reason
+   - Transaction.Status = RefundFailed
+6. Add retry/backoff for transient gateway failures.
+```
+
 ### Step 15 - Edge Cases Checklist
 
 Status:
 
 ```text
-Partially covered, not fully tested.
+Covered for current milestone through manual testing and build verification.
 ```
 
 Covered by current implementation:
@@ -873,25 +899,33 @@ Covered by current implementation:
 - Invalid VNPAY signature returns `RspCode = 97`.
 - Missing transaction returns `RspCode = 01`.
 - Amount mismatch returns `RspCode = 04`.
-- Duplicate successful IPN for already-success transaction returns `RspCode = 02`.
+- Pending + successful IPN marks transaction `Success` and publishes `payment.completed`.
+- Pending + failed IPN marks transaction `Failed`, publishes `payment.failed`, and publishes `inventory.release_requested`.
+- Duplicate successful IPN for already-success transaction returns `RspCode = 02` and does not publish another `payment.completed`.
+- Duplicate failed IPN for `Failed/Expired/RefundPending/Refunded` returns `RspCode = 00` and does not publish duplicate failure/release events.
 - Success IPN after failed/expired transaction creates refund path instead of confirming order.
+- Success IPN after `RefundPending/Refunded` returns `RspCode = 00` and does not confirm order.
+- Pending transaction expiration marks transaction `Expired`, publishes `payment.failed`, and publishes `inventory.release_requested`.
+- Store consumes `inventory.release_requested` and restores `QuantityRemaining` idempotently through `ProcessedMessage`.
+- Return endpoint verifies/parses VNPAY params but does not update DB.
 
-Still needs test/confirmation:
+Still not implemented / future hardening:
 
-- Duplicate failed IPN does not publish duplicate `payment.failed`.
-- Duplicate failed IPN does not publish duplicate `inventory.release_requested`.
-- Outbox publisher retries failed RabbitMQ publish.
-- Store compensation is idempotent after Step 12.
-- Pending transaction expiration works after Step 13.
-- Return endpoint does not update transaction.
-- VNPAY curl helper signs params the same way `VerifyIpnAsync` expects.
+- Actual VNPAY refund API.
+- Refund retry worker.
+- Automated integration tests for the full saga.
+- Script/tool to generate signed VNPAY IPN payloads.
+- Race-condition hardening between IPN success and expiration worker.
+- Compare `PaidAtUtc` with `ExpiresAt` if the business later wants to accept a payment made before expiry but delivered after the expiration worker ran.
+- CorrelationId/CausationId for full saga tracing.
+- Dead-letter queue for malformed RabbitMQ messages.
 
 ### Step 16 - Local Testing
 
 Status:
 
 ```text
-Not implemented as scripts/tools.
+Manual testing completed. Script/tool not implemented.
 ```
 
 Recommended local curl test approach:
@@ -927,13 +961,16 @@ Scenarios to test:
 - amount mismatch
 - duplicate success IPN
 - late success after expired/failed
+- expiration worker flow
 
 ### Step 17 - VNPAY Sandbox Through Public Tunnel
 
 Status:
 
 ```text
-Not tested.
+Ngrok local-to-public mapping completed.
+VNPAY ReturnUrl browser redirect tested successfully.
+VNPAY IPN endpoint is ready, but real server-to-server IPN depends on VNPAY-side IPN URL configuration.
 ```
 
 Use after local curl tests pass.
@@ -942,7 +979,8 @@ Requirements:
 
 - Real VNPAY sandbox `TmnCode`.
 - Real VNPAY sandbox `HashSecret`.
-- Public HTTPS tunnel for Payment API, for example ngrok or Cloudflare Tunnel.
+- Public HTTPS tunnel for Payment API.
+- ngrok is the recommended tunnel for current sandbox testing because it is simpler to set up than Cloudflare Tunnel.
 
 Config shape:
 
@@ -966,6 +1004,201 @@ Note:
 - VNPAY cannot call `localhost` for IPN.
 - `ReturnUrl` is browser-facing.
 - `IpNUrl` is server-to-server and should be treated as source of truth.
+- Current code sends `ReturnUrl` to VNPAY through `vnp_ReturnUrl`.
+- Current code does not send `IpNUrl` in the checkout URL. The IPN URL must be configured on VNPAY's merchant/sandbox side or sent to VNPAY support for mapping to the sandbox `TmnCode`.
+- If VNPAY has not configured the IPN URL yet, the user can still complete checkout and be redirected to `/api/vnpay/return`, but the transaction remains `Pending` until `/api/vnpay/ipn` is called.
+
+Ngrok setup used for local sandbox testing:
+
+```powershell
+cd C:\Users\ADMIN\Desktop\Capstone-BE\stealdeal-backend\src\Services\Payment\StealDeal.Services.Payment.API
+dotnet run --launch-profile https
+```
+
+Expected Payment API local URLs:
+
+```text
+https://localhost:7080
+http://localhost:5155
+```
+
+In a second terminal:
+
+```powershell
+ngrok config add-authtoken "<YOUR_NGROK_AUTHTOKEN>"
+ngrok http https://localhost:7080
+```
+
+If HTTPS upstream causes local dev certificate issues, an alternative is:
+
+```powershell
+ngrok http http://localhost:5155
+```
+
+Ngrok will output a public URL like:
+
+```text
+https://abc-xyz.ngrok-free.app
+```
+
+Then update Payment API config and restart the Payment API:
+
+```json
+"VnPay": {
+  "TmnCode": "VNPAY_SANDBOX_TMN_CODE",
+  "HashSecret": "VNPAY_SANDBOX_HASH_SECRET",
+  "PaymentUrl": "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
+  "ReturnUrl": "https://abc-xyz.ngrok-free.app/api/vnpay/return",
+  "IpNUrl": "https://abc-xyz.ngrok-free.app/api/vnpay/ipn",
+  "Version": "2.1.0",
+  "Command": "pay",
+  "CurrCode": "VND",
+  "Locale": "vn",
+  "ExpireMinutes": 15
+}
+```
+
+VNPAY-side IPN URL to configure or send to VNPAY support:
+
+```text
+https://abc-xyz.ngrok-free.app/api/vnpay/ipn
+```
+
+Ngrok inspection dashboard:
+
+```text
+http://127.0.0.1:4040
+```
+
+Use this dashboard to confirm whether VNPAY called:
+
+```text
+GET /api/vnpay/return
+GET /api/vnpay/ipn
+```
+
+Important ngrok notes:
+
+- Free ngrok domains can change when the tunnel restarts.
+- Every time the ngrok domain changes, update `VnPay:ReturnUrl`, `VnPay:IpNUrl`, restart Payment API, and update/send the new IPN URL to VNPAY.
+- Do not configure `localhost` as the VNPAY IPN URL. VNPAY servers cannot reach the developer machine's localhost.
+- Keep Payment API running while ngrok is running. If Payment API stops, ngrok will show gateway/upstream errors.
+
+Manual fallback if VNPAY IPN is not configured yet:
+
+```text
+1. Complete checkout through VNPAY sandbox.
+2. Browser redirects to /api/vnpay/return with signed vnp_* params.
+3. Copy the full query string.
+4. Call /api/vnpay/ipn with the same query string in Postman.
+5. This simulates the server-to-server IPN using VNPAY-signed params.
+```
+
+## End-to-End Payment Flow Summary
+
+Current implemented happy path:
+
+```text
+1. Buyer places order.
+2. Order service publishes order.created.
+3. Store service consumes order.created.
+4. Store validates stock and decreases QuantityRemaining.
+5. Store publishes inventory.reserved.
+6. Payment service consumes inventory.reserved.
+7. Payment creates Pending transaction.
+8. Payment creates VNPAY checkout URL.
+9. Frontend polls GET /api/transactions/order/{orderId}.
+10. Frontend redirects buyer to CheckoutUrl.
+11. Buyer completes/cancels payment on VNPAY.
+12. VNPAY redirects browser to /api/vnpay/return.
+13. VNPAY server calls /api/vnpay/ipn if IPN URL is configured.
+14. Payment verifies signature, vnp_TxnRef, and amount.
+15. If success:
+    - Transaction -> Success
+    - publish payment.completed
+16. If fail:
+    - Transaction -> Failed
+    - publish payment.failed
+    - publish inventory.release_requested
+17. Order consumes payment.completed/payment.failed and updates order status.
+18. Store consumes inventory.release_requested and restores stock when needed.
+```
+
+Expiration path:
+
+```text
+1. Transaction remains Pending.
+2. ExpiresAt <= UtcNow.
+3. PaymentExpirationProcessor marks transaction Expired.
+4. Payment publishes payment.failed.
+5. Payment publishes inventory.release_requested.
+6. Order fails/cancels the order.
+7. Store releases reserved stock.
+```
+
+Late success path after compensation:
+
+```text
+1. Transaction already Failed/Expired.
+2. IPN success arrives later.
+3. Payment does not confirm order.
+4. Payment marks transaction RefundPending.
+5. Payment creates Refund Pending row.
+6. Future refund worker/API will process the actual VNPAY refund.
+```
+
+Production IPN direction:
+
+```text
+1. Replace ngrok with a stable HTTPS production domain.
+2. Use a real VNPAY production TmnCode and HashSecret from secure configuration/secrets, not appsettings committed to source.
+3. Configure the production IPN URL with VNPAY:
+   https://api.your-domain.com/api/vnpay/ipn
+4. Keep /api/vnpay/ipn anonymous, but require valid VNPAY signature and amount matching.
+5. Add structured logging for every IPN result:
+   GatewayRef, TransactionId, RspCode, ResponseCode, TransactionStatus.
+6. Add monitoring/alerts for invalid signature, amount mismatch, refund pending, and outbox publish failures.
+7. Add concurrency hardening for race between IPN and expiration worker.
+8. Add automated integration tests using signed callback payloads.
+```
+
+Testing notes:
+
+```text
+Payment success:
+  vnp_ResponseCode = 00
+  vnp_TransactionStatus = 00
+  valid vnp_SecureHash
+  amount matches transaction.Amount * 100
+
+Payment fail:
+  valid vnp_SecureHash
+  amount matches
+  vnp_ResponseCode != 00 or vnp_TransactionStatus != 00
+
+Invalid signature:
+  wrong vnp_SecureHash
+  expect RspCode 97 and no DB update
+
+Amount mismatch:
+  valid signature but vnp_Amount != transaction.Amount * 100
+  expect RspCode 04 and no DB update
+
+Wrong/missing transaction:
+  valid signature but vnp_TxnRef does not match any transaction.GatewayRef
+  expect RspCode 01 and no DB update
+
+Expired transaction:
+  Status = Pending
+  ExpiresAt <= UtcNow
+  wait for PaymentExpirationProcessor polling interval
+  expect Expired + payment.failed + inventory.release_requested
+
+Late success:
+  first make transaction Failed/Expired
+  then send valid success IPN
+  expect RefundPending + Refund Pending row, no payment.completed
+```
 
 ### Database Migration
 
@@ -998,10 +1231,22 @@ dotnet ef database update --project .\Payment\StealDeal.Services.Payment.Infrast
 
 ## Current Verification
 
-Last known build command:
+Last known Payment build command:
 
 ```text
 dotnet build .\Payment\StealDeal.Services.Payment.slnx
+```
+
+Last result:
+
+```text
+Build succeeded
+```
+
+Last known Store build command after Step 12:
+
+```text
+dotnet build .\Store\StealDeal.Services.Store.API\StealDeal.Services.Store.API.csproj
 ```
 
 Last result:
@@ -1022,9 +1267,11 @@ This warning existed before the payment gateway implementation work and is not r
 
 Recommended next steps:
 
-1. Review Step 10 implementation and confirm business rules.
-2. Create/update EF migration for new `Transaction`, `Refund`, `OutboxMessage`, and `ProcessedMessage` fields/tables.
-3. Implement or refine `PaymentOutboxMessageFactory` if you want event creation moved out of `PaymentCallbackService`.
-4. Implement Step 12 in Store: consume `inventory.release_requested`.
-5. Add local curl/IPN signature helper for testing.
-6. Add expiration worker for pending transactions.
+1. Finish VNPAY sandbox IPN configuration on VNPAY side.
+2. Test real VNPAY server-to-server IPN through ngrok and confirm it appears in `http://127.0.0.1:4040`.
+3. Add local helper script/tool for generating signed VNPAY IPN requests.
+4. Add automated tests for IPN success/fail/invalid/duplicate/late-success/expiration cases.
+5. Add refund processing implementation for `Refund Status = Pending`.
+6. Add concurrency hardening between IPN handler and expiration worker.
+7. Add CorrelationId/CausationId to outbox/processed messages for easier saga tracing.
+8. Prepare production IPN configuration with stable HTTPS domain and secret management.
