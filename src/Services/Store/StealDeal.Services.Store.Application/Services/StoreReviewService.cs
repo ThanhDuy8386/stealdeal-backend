@@ -14,17 +14,20 @@ namespace StealDeal.Services.Store.Application.Services
         private readonly IStoreReviewRepository _reviewRepository;
         private readonly ISurpriseBagRepository _bagRepository;
         private readonly IStoreProfileRepository _storeRepository;
+        private readonly IOrderVerificationService _orderVerificationService;
         private readonly IUnitOfWork _unitOfWork;
 
         public StoreReviewService(
             IStoreReviewRepository reviewRepository,
             ISurpriseBagRepository bagRepository,
             IStoreProfileRepository storeRepository,
+            IOrderVerificationService orderVerificationService,
             IUnitOfWork unitOfWork)
         {
             _reviewRepository = reviewRepository;
             _bagRepository = bagRepository;
             _storeRepository = storeRepository;
+            _orderVerificationService = orderVerificationService;
             _unitOfWork = unitOfWork;
         }
 
@@ -34,23 +37,22 @@ namespace StealDeal.Services.Store.Application.Services
             if (request.RatingScore < 1 || request.RatingScore > 5)
                 throw new BadRequestException("Rating score must be between 1 and 5.");
 
-            // TODO: Validate order ownership & completion status using IOrderVerificationService
-            // once Order Service checkout/saga statuses are stabilized.
-            // Example:
-            // var isEligible = await _orderVerificationService.VerifyOwnershipAsync(request.OrderId, buyerId, request.BagId);
-            // if (!isEligible)
-            //     throw new ForbiddenException("You are not eligible to review this order item.");
-
             // Prevent duplicate review per bag for this order
             var existing = await _reviewRepository.GetByOrderAndBagAsync(request.OrderId, request.BagId);
             if (existing is not null)
                 throw new ConflictException("You have already reviewed this bag for this order.");
+
+            // cross service verification to ensure the buyer actually owns the order and is eligible to review
+            var isEligible = await _orderVerificationService.VerifyOwnershipAsync(request.OrderId, buyerId, request.BagId);
+            if (!isEligible)
+                throw new ForbiddenException("You are not eligible to review this order item.");
 
             // Resolve storeId from the bag being reviewed
             var bag = await _bagRepository.GetByIdAsync(request.BagId);
             if (bag is null)
                 throw new NotFoundException("Bag not found.");
 
+            // create entity
             var review = request.ToEntity(buyerId, buyerName, storeId: bag.StoreId);
 
             // Update Store RatingScore and ReviewCount (Incremental formula)

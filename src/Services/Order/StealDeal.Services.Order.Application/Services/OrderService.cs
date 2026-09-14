@@ -144,5 +144,37 @@ namespace StealDeal.Services.Order.Application.Services
 
             return order.ToResponse();
         }
+
+        public async Task<OrderReviewEligibilityResponse> CheckReviewEligibilityAsync(Guid orderId, Guid buyerId, Guid bagId)
+        {
+            // find order
+            var order = await _orderRepository.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException("Order not found.");
+
+            // check if user own the order
+            if (order.UserId != buyerId)
+                throw new ForbiddenException("You do not own this order.");
+
+            // check if order contain the bag
+            if (!order.Items.Any(items => items.BagId == bagId))
+                throw new BadRequestException("This order does not contain the specified bag.");
+
+            // TODO: remove the pending check later
+            if (!order.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) && !order.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                throw new BadRequestException("Order is not eligible for review. Only completed (or pending) orders can be reviewed.");
+
+            bool isEligible = true; // For now, we assume that if the order is completed (or pending), it is eligible for review.
+
+            return new OrderReviewEligibilityResponse
+            {
+                IsEligible = isEligible,
+                OrderId = order.Id,
+                BuyerId = order.UserId,
+                BagId = bagId,
+                OrderStatus = order.Status
+            };
+
+        }
     }
 }

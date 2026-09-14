@@ -14,6 +14,7 @@ using StealDeal.Services.Store.Infrastructure.Configuration;
 using StealDeal.Services.Store.Infrastructure.Messaging;
 using StealDeal.Services.Store.Infrastructure.Persistence;
 using StealDeal.Services.Store.Infrastructure.Repositories;
+using StealDeal.Services.Store.Infrastructure.Services;
 using StealDeal.Services.Store.Infrastructure.Storage;
 using System.Text;
 
@@ -116,6 +117,14 @@ builder.Services.AddSwaggerGen(options =>
         [new OpenApiSecuritySchemeReference("Bearer", document, "JWT")] = []
     });
 });
+
+builder.Services.AddHttpClient<IOrderVerificationService, OrderVerificationService>(client =>
+{
+    var baseUrl = builder.Configuration["Services:OrderServiceUrl"] ?? "http://localhost:5165";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+
 // ─────────────────────────────────────────────────────────
 var app = builder.Build();
 
