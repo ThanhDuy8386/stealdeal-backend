@@ -13,5 +13,6 @@ namespace StealDeal.Services.Order.Application.Services.Interfaces
         Task<IEnumerable<OrderResponse>> GetMyOrdersAsync(Guid userId);
         Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid ownerId);
         Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request);
+        Task<OrderReviewEligibilityResponse> CheckReviewEligibilityAsync(Guid orderId, Guid buyerId, Guid bagId);
     }
 }
