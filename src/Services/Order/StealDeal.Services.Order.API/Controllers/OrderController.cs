@@ -69,10 +69,12 @@ namespace StealDeal.Services.Order.API.Controllers
 
         // might change to be internal endpoint for other services to call, but for now it's public
         [HttpGet("{id:guid}/review-eligibility")]
-        public async Task<IActionResult> CheckReviewEligibility(Guid id, [FromQuery] Guid bagId, [FromQuery] Guid? buyerId)
+        public async Task<IActionResult> CheckReviewEligibility(
+            Guid id,
+            [FromQuery] Guid bagId,
+            [FromQuery] Guid buyerId)
         {
-            var resolvedBuyerId = buyerId ?? GetCurrentUserId();
-            var result = await _orderService.CheckReviewEligibilityAsync(id, resolvedBuyerId, bagId);
+            var result = await _orderService.CheckReviewEligibilityAsync(id, buyerId, bagId);
             return Ok(result);
         }
 

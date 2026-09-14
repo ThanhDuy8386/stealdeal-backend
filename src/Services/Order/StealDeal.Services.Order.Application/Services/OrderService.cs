@@ -164,7 +164,7 @@ namespace StealDeal.Services.Order.Application.Services
             if (!order.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) && !order.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
                 throw new BadRequestException("Order is not eligible for review. Only completed (or pending) orders can be reviewed.");
 
-            bool isEligible = order.Status == "Completed" || order.Status == "Pending";
+            bool isEligible = true; // For now, we assume that if the order is completed (or pending), it is eligible for review.
 
             return new OrderReviewEligibilityResponse
             {
