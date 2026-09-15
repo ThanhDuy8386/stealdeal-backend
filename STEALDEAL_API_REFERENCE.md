@@ -363,9 +363,18 @@ or `404 Not Found`.
 `page` (default `1`) and `pageSize` (default `10`, clamped between `1` and `50`). Reviews are returned
 ordered from newest to oldest (`createdAt DESC`) wrapped in `PagedResult<StoreReviewResponse>`.
 
-`POST /api/reviews` enforces composite uniqueness on `(orderId, bagId)` (1 review per bag in an order),
-snapshots `buyerName` from token claims (`ClaimTypes.Name` / "Customer"), and incrementally updates
-the store's `ratingScore` and `reviewCount`.
+`POST /api/reviews` performs cross-service validation before creating a review:
+- Validates that `ratingScore` is between 1 and 5 (`400 Bad Request`).
+- Enforces composite uniqueness on `(orderId, bagId)` (`409 Conflict`), preventing duplicate reviews for the same bag within an order while allowing buyers who purchase the same bag across multiple distinct orders to review each purchase.
+- Calls Order Service via typed `HttpClient` (`IOrderVerificationService` -> `GET /api/orders/{orderId}/review-eligibility?bagId={bagId}&buyerId={buyerId}`) to verify that:
+  - The order exists (`404 Not Found`).
+  - The authenticated buyer owns the order (`403 Forbidden`).
+  - The order contains the specified bag (`400 Bad Request`).
+  - The order status is `Completed` (or `Pending` during development) (`400 Bad Request`).
+  - If the Order Service is unreachable or times out, returns `400 Bad Request` with an unavailable notice.
+- Resolves `storeId` and `bagName` from local bag lookup (`404 Not Found` if the bag does not exist).
+- Snapshots `buyerName` from token claims (`ClaimTypes.Name` / "Customer").
+- Incrementally updates the store's `ratingScore` and `reviewCount`.
 
 `PATCH /api/reviews/{id}/reply` allows the verified store owner to reply, saving `storeReply` and recording
 the timestamp in `repliedAt`.
@@ -536,6 +545,7 @@ Important current omissions:
 | `GET` | `/api/orders/my-orders` | Bearer | none | `200 OrderResponse[]` |
 | `GET` | `/api/orders/store/{storeId}` | Seller or Admin | none | `200 OrderResponse[]` |
 | `PATCH` | `/api/orders/{id}/status` | Order buyer, Seller, or Admin | `UpdateOrderStatusRequest` | `200 OrderResponse` |
+| `GET` | `/api/orders/{id}/review-eligibility` | Inter-service only `[bypass]` | `bagId: UUID, buyerId: UUID` query | `200 OrderReviewEligibilityResponse` |
 | `POST` | `/api/pickup-disputes` | Bearer | `CreateDisputeRequest` | `201 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes/{id}` | Related user or Admin | none | `200 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes` | Admin | none | `200 PickupDisputeResponse[]` |
@@ -544,6 +554,19 @@ Important current omissions:
 Order creation uses the authenticated user's ID. A buyer may cancel their own
 pending order; Sellers and Admins may update progression or cancel pending orders.
 Seller ownership of the target store/order is not currently verified.
+
+`[bypass]` `GET /api/orders/{id}/review-eligibility?bagId={bagId}&buyerId={buyerId}` is strictly
+intended for internal service-to-service communication (invoked by Store Service's
+`OrderVerificationService` during review creation). It is currently exposed without network-level
+isolation or service authentication only because the environment is in local pre-deployment development.
+Frontend clients must **not** call this endpoint directly or rely on it as a public contract; production
+deployment will isolate this route behind internal networking or API gateway restrictions.
+
+When invoked, it verifies whether an order item is eligible for review. It returns `200 OK` with
+`OrderReviewEligibilityResponse` if the order exists, belongs to `buyerId`, contains `bagId`, and its
+status is `Completed` (or `Pending` during development). It throws `404 Not Found` if the order is not found,
+`403 Forbidden` if the buyer does not own the order, or `400 Bad Request` if the bag is not in the order or
+the status is not completed/pending.
 
 ### Requests
 
@@ -629,6 +652,14 @@ export interface PickupDisputeResponse {
   description: string;
   status: string;
   createdAt: ISODateTime;
+}
+
+export interface OrderReviewEligibilityResponse {
+  isEligible: boolean;
+  orderId: UUID;
+  buyerId: UUID;
+  bagId: UUID;
+  orderStatus: string;
 }
 ```
 
