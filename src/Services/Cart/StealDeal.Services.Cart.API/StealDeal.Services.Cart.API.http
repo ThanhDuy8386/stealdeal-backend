@@ -1,0 +1,6 @@
+@StealDeal.Services.Cart.API_HostAddress = http://localhost:5185
+
+GET {{StealDeal.Services.Cart.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
