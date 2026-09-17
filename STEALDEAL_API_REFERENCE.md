@@ -336,11 +336,16 @@ permissions, including the ability to manage accounts with either admin role.
 | `PUT` | `/api/bags/{id}` | Owning Seller | `multipart/form-data` (`UpdateBagRequest` + optional `image: File`) | `200 SurpriseBagResponse` |
 | `DELETE` | `/api/bags/{id}` | Seller | none | `204 NoContent` |
 | `PATCH` | `/api/bags/{id}/status` | Owning Seller | `UpdateBagStatusRequest` | `204 NoContent` |
-| `GET` | `/api/reviews/store/{storeId}` | Public | `page?: number, pageSize?: number` query | `200 PagedResult<StoreReviewResponse>` |
-| `GET` | `/api/reviews/bag/{bagId}` | Public | `page?: number, pageSize?: number` query | `200 PagedResult<StoreReviewResponse>` |
+| `GET` | `/api/reviews/store/{storeId}` | Public | `ReviewFilterRequest` query | `200 PagedResult<StoreReviewResponse>` |
+| `GET` | `/api/reviews/bag/{bagId}` | Public | `ReviewFilterRequest` query | `200 PagedResult<StoreReviewResponse>` |
+| `GET` | `/api/reviews/store/me` | Seller | `ReviewFilterRequest` query | `200 PagedResult<StoreReviewResponse>` |
+| `GET` | `/api/reviews/reported` | Admin or SuperAdmin | `page?: number, pageSize?: number` query | `200 PagedResult<StoreReviewResponse>` |
 | `POST` | `/api/reviews` | Bearer | `CreateReviewRequest` | `201 StoreReviewResponse` |
 | `PATCH` | `/api/reviews/{id}/reply` | Owning Seller | `ReplyReviewRequest` | `204 NoContent` |
+| `DELETE` | `/api/reviews/{id}/reply` | Owning Seller | none | `204 NoContent` |
 | `PATCH` | `/api/reviews/{id}/report` | Bearer | none | `204 NoContent` |
+| `DELETE` | `/api/reviews/{id}/report` | Owning Seller, Admin, or SuperAdmin | none | `204 NoContent` |
+| `DELETE` | `/api/reviews/{id}` | Admin or SuperAdmin | none | `204 NoContent` |
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
@@ -359,16 +364,41 @@ registration (`isVerify == false`), freeing up the seller owner account so they 
 a new store. If the store is already verified or not found, it returns `400 Bad Request`
 or `404 Not Found`.
 
-`GET /api/reviews/store/{storeId}` and `GET /api/reviews/bag/{bagId}` support optional query parameters
-`page` (default `1`) and `pageSize` (default `10`, clamped between `1` and `50`). Reviews are returned
-ordered from newest to oldest (`createdAt DESC`) wrapped in `PagedResult<StoreReviewResponse>`.
+`GET /api/reviews/store/{storeId}` and `GET /api/reviews/bag/{bagId}` support filtering and search via
+`ReviewFilterRequest` query parameters: `page` (default `1`), `pageSize` (default `10`, clamped between `1` and `50`),
+`ratingScore` (1..5), `hasReply` (boolean), and `search` (keyword search across comment, buyer name, bag name, and store reply).
+Reviews are returned ordered from newest to oldest (`createdAt DESC`) wrapped in `PagedResult<StoreReviewResponse>`.
+Public review endpoints omit `isReported` (`null` / not serialized).
 
-`POST /api/reviews` enforces composite uniqueness on `(orderId, bagId)` (1 review per bag in an order),
-snapshots `buyerName` from token claims (`ClaimTypes.Name` / "Customer"), and incrementally updates
-the store's `ratingScore` and `reviewCount`.
+`GET /api/reviews/store/me` returns the authenticated seller's store reviews with the same filtering and search capabilities,
+plus an optional `isReported` filter. The response includes `isReported: boolean`.
+
+`GET /api/reviews/reported` allows admins and superadmins to list all reported reviews across all stores, paginated.
+The response includes `isReported: true`.
+
+`POST /api/reviews` performs cross-service validation before creating a review:
+- Validates that `ratingScore` is between 1 and 5 (`400 Bad Request`).
+- Enforces composite uniqueness on `(orderId, bagId)` (`409 Conflict`), preventing duplicate reviews for the same bag within an order while allowing buyers who purchase the same bag across multiple distinct orders to review each purchase.
+- Calls Order Service via typed `HttpClient` (`IOrderVerificationService` -> `GET /api/orders/{orderId}/review-eligibility?bagId={bagId}&buyerId={buyerId}`) to verify that:
+  - The order exists (`404 Not Found`).
+  - The authenticated buyer owns the order (`403 Forbidden`).
+  - The order contains the specified bag (`400 Bad Request`).
+  - The order status is `Completed` (or `Pending` during development) (`400 Bad Request`).
+  - If the Order Service is unreachable or times out, returns `400 Bad Request` with an unavailable notice.
+- Resolves `storeId` and `bagName` from local bag lookup (`404 Not Found` if the bag does not exist).
+- Snapshots `buyerName` from token claims (`ClaimTypes.Name` / "Customer").
+- Updates the store's `ratingScore` and `reviewCount` via exact database recalculation.
 
 `PATCH /api/reviews/{id}/reply` allows the verified store owner to reply, saving `storeReply` and recording
-the timestamp in `repliedAt`.
+the timestamp in `repliedAt`. Reply text cannot be empty whitespace.
+
+`DELETE /api/reviews/{id}/reply` allows the verified store owner to delete/clear a reply, resetting `storeReply` and `repliedAt` to `null`.
+
+`PATCH /api/reviews/{id}/report` allows any authenticated user to flag a review for moderation.
+
+`DELETE /api/reviews/{id}/report` allows the owning seller (e.g. accidental misclick) or an admin/superadmin to dismiss/un-report a review, resetting `isReported` to `false`.
+
+`DELETE /api/reviews/{id}` allows an admin or superadmin to permanently delete a review (e.g. confirmed policy violation), automatically recalculating the store's `ratingScore` and `reviewCount`.
 
 ### Requests
 
@@ -436,6 +466,15 @@ export interface CreateReviewRequest {
 
 export interface ReplyReviewRequest {
   storeReply: string;
+}
+
+export interface ReviewFilterRequest {
+  page?: number;        // default 1
+  pageSize?: number;    // default 10, max 50
+  ratingScore?: number; // 1..5
+  hasReply?: boolean;   // true = replied, false = needs reply
+  search?: string;      // search across comment, buyer name, bag name, and store reply
+  isReported?: boolean; // seller dashboard endpoint only
 }
 ```
 
@@ -515,6 +554,7 @@ export interface StoreReviewResponse {
   storeReply: string | null;
   repliedAt: ISODateTime | null;
   createdAt: ISODateTime;
+  isReported?: boolean; // omitted from public responses; present in seller dashboard & admin endpoints
 }
 ```
 
@@ -523,7 +563,9 @@ Important current omissions:
 - A store accepts `bankAccount` and `licenseUrl`, but `StoreProfileResponse`
   never returns them.
 - `avatarUrl` is returned but cannot be set by either store request.
-- `isReported` is omitted from public review responses by design for moderation safety.
+- `isReported` is omitted from public review responses by design for moderation safety,
+  but is included for authenticated store owners on `GET /api/reviews/store/me` and
+  moderators on `GET /api/reviews/reported`.
 
 ## 4. Order
 
@@ -536,6 +578,7 @@ Important current omissions:
 | `GET` | `/api/orders/my-orders` | Bearer | none | `200 OrderResponse[]` |
 | `GET` | `/api/orders/store/{storeId}` | Seller or Admin | none | `200 OrderResponse[]` |
 | `PATCH` | `/api/orders/{id}/status` | Order buyer, Seller, or Admin | `UpdateOrderStatusRequest` | `200 OrderResponse` |
+| `GET` | `/api/orders/{id}/review-eligibility` | Inter-service only `[bypass]` | `bagId: UUID, buyerId: UUID` query | `200 OrderReviewEligibilityResponse` |
 | `POST` | `/api/pickup-disputes` | Bearer | `CreateDisputeRequest` | `201 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes/{id}` | Related user or Admin | none | `200 PickupDisputeResponse` |
 | `GET` | `/api/pickup-disputes` | Admin | none | `200 PickupDisputeResponse[]` |
@@ -544,6 +587,19 @@ Important current omissions:
 Order creation uses the authenticated user's ID. A buyer may cancel their own
 pending order; Sellers and Admins may update progression or cancel pending orders.
 Seller ownership of the target store/order is not currently verified.
+
+`[bypass]` `GET /api/orders/{id}/review-eligibility?bagId={bagId}&buyerId={buyerId}` is strictly
+intended for internal service-to-service communication (invoked by Store Service's
+`OrderVerificationService` during review creation). It is currently exposed without network-level
+isolation or service authentication only because the environment is in local pre-deployment development.
+Frontend clients must **not** call this endpoint directly or rely on it as a public contract; production
+deployment will isolate this route behind internal networking or API gateway restrictions.
+
+When invoked, it verifies whether an order item is eligible for review. It returns `200 OK` with
+`OrderReviewEligibilityResponse` if the order exists, belongs to `buyerId`, contains `bagId`, and its
+status is `Completed` (or `Pending` during development). It throws `404 Not Found` if the order is not found,
+`403 Forbidden` if the buyer does not own the order, or `400 Bad Request` if the bag is not in the order or
+the status is not completed/pending.
 
 ### Requests
 
@@ -629,6 +685,14 @@ export interface PickupDisputeResponse {
   description: string;
   status: string;
   createdAt: ISODateTime;
+}
+
+export interface OrderReviewEligibilityResponse {
+  isEligible: boolean;
+  orderId: UUID;
+  buyerId: UUID;
+  bagId: UUID;
+  orderStatus: string;
 }
 ```
 

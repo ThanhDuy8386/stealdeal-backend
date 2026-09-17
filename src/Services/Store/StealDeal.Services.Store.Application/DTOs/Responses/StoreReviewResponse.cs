@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace StealDeal.Services.Store.Application.DTOs.Responses
 {
@@ -16,5 +17,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Responses
         public string? StoreReply { get; set; }
         public DateTime? RepliedAt { get; set; }
         public DateTime CreatedAt { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? IsReported { get; set; }
     }
 }
