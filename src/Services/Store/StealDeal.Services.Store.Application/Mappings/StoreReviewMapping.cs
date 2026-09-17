@@ -24,7 +24,7 @@ namespace StealDeal.Services.Store.Application.Mappings
         }
 
         // Entity -> Response DTO
-        public static StoreReviewResponse ToResponse(this StoreReview review)
+        public static StoreReviewResponse ToResponse(this StoreReview review, bool includeReportStatus = false)
         {
             return new StoreReviewResponse
             {
@@ -39,7 +39,8 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Comment = review.Comment,
                 StoreReply = review.StoreReply,
                 RepliedAt = review.RepliedAt,
-                CreatedAt = review.CreatedAt
+                CreatedAt = review.CreatedAt,
+                IsReported = includeReportStatus ? review.IsReported : null
             };
         }
     }
