@@ -48,9 +48,10 @@ Frontend add/remove/update cart
   -> Cart service stores cart in Redis by userId
 
 Frontend checkout/place order
-  -> calls checkout endpoint
-  -> backend reads cart from Redis
-  -> backend creates Order from Redis cart snapshot
+  -> chooses one store cart
+  -> calls checkout endpoint for that cart
+  -> backend reads that store cart from Redis
+  -> backend creates one Order from that Redis cart snapshot
   -> existing Order saga continues unchanged
 ```
 
@@ -70,8 +71,8 @@ Get cart:
   Frontend -> Cart API
 
 Place order:
-  Frontend -> Order API checkout-from-cart endpoint
-  Order API -> reads cart from Cart service or shared Cart application contract
+  Frontend -> Order API checkout-from-cart endpoint with storeId/cart selector
+  Order API -> reads selected store cart from Cart service or shared Cart application contract
 ```
 
 The order request should no longer contain the full cart detail from frontend.
@@ -88,6 +89,7 @@ Idempotency-Key: <client-generated-guid>
 
 ```json
 {
+  "storeId": "store-id",
   "note": "Please prepare before 6 PM"
 }
 ```
@@ -101,6 +103,9 @@ User wants to buy bag A, quantity 2
 User wants to buy bag B, quantity 1
 Cart should survive reload/device switch
 Cart should expire if abandoned
+User can have multiple active carts at the same time
+Bags from the same store belong to the same cart
+Each store cart becomes a separate order at checkout
 ```
 
 Cart service does not own:
@@ -301,25 +306,54 @@ A Redis key is like a named slot.
 Recommended cart key:
 
 ```text
-cart:user:{userId}
+cart:user:{userId}:store:{storeId}
 ```
 
 Example:
 
 ```text
-cart:user:7b9e7f0e-0b6d-4f8a-95a5-8327d80c12f1
+cart:user:7b9e7f0e-0b6d-4f8a-95a5-8327d80c12f1:store:2c4d9f91-8d8e-4f2e-ae7f-80c9e5e9a001
 ```
+
+Store cart index key:
+
+```text
+cart:user:{userId}:stores
+```
+
+This is a Redis Set containing storeIds that currently have cart keys for the
+user. It lets `GET /api/cart` list carts without scanning Redis.
 
 ### 8.2 Value
 
-For v1, store the whole cart as one JSON value.
+For v1, store each cart as one Redis Hash.
 
 ```text
-key:   cart:user:{userId}
-value: serialized CartDto JSON
+key:  cart:user:{userId}:store:{storeId}
+type: hash
 ```
 
-This is simpler than Redis Hash and good enough for the first implementation.
+Recommended fields:
+
+```text
+storeId -> store-id
+currency -> VND
+version -> 3
+createdAtUtc -> 2026-09-16T02:30:00.0000000Z
+updatedAtUtc -> 2026-09-16T02:45:00.0000000Z
+expiresAtUtc -> 2026-09-17T02:45:00.0000000Z
+item:{bagId}:quantity -> 2
+item:{bagId}:snapshot -> JSON display/order snapshot for that bag
+```
+
+Why Hash instead of one JSON string:
+
+```text
+Quantity changes can use atomic Redis commands such as HINCRBY.
+Remove item can use HDEL.
+The service avoids overwriting unrelated item updates with stale full-cart JSON.
+GET /api/cart can reconstruct all user carts from the store index and HGETALL.
+```
 
 ### 8.3 TTL
 
@@ -336,20 +370,33 @@ Delete cart after successful order creation
 ### 8.4 Atomicity
 
 Single Redis commands are atomic. A read-modify-write flow is not automatically
-atomic.
+atomic, so do not update cart items by reading the full cart and writing it back.
 
-For v1, this is acceptable:
+Use item-level Redis operations:
 
 ```text
-GET cart
-modify in application
-SET cart with TTL
+Add/increase item:
+  HINCRBY cart:user:{userId}:store:{storeId} item:{bagId}:quantity {delta}
+  HSET cart:user:{userId}:store:{storeId} item:{bagId}:snapshot {...}
+  SADD cart:user:{userId}:stores {storeId}
+  EXPIRE cart:user:{userId}:store:{storeId} {ttlSeconds}
+
+Set quantity:
+  HSET cart:user:{userId}:store:{storeId} item:{bagId}:quantity {quantity}
+  EXPIRE cart:user:{userId}:store:{storeId} {ttlSeconds}
+
+Remove item:
+  HDEL cart:user:{userId}:store:{storeId} item:{bagId}:quantity item:{bagId}:snapshot
+  EXPIRE cart:user:{userId}:store:{storeId} {ttlSeconds}
 ```
+
+For multi-command mutations, use a Lua script so item update, TTL refresh, and
+store index maintenance happen atomically.
 
 For checkout, add a short lock to avoid duplicate order creation:
 
 ```text
-checkout-lock:user:{userId}
+checkout-lock:user:{userId}:store:{storeId}
 TTL: 5 seconds
 ```
 
@@ -370,7 +417,32 @@ configure memory limit and eviction policy intentionally.
 
 ## 9. Redis Cart Data Shape
 
-Use one cart per authenticated user.
+Use one hash cart per authenticated user.
+
+```text
+SMEMBERS cart:user:7b9e7f0e-0b6d-4f8a-95a5-8327d80c12f1:stores
+
+HGETALL cart:user:7b9e7f0e-0b6d-4f8a-95a5-8327d80c12f1:store:2c4d9f91-8d8e-4f2e-ae7f-80c9e5e9a001
+
+storeId
+2c4d9f91-8d8e-4f2e-ae7f-80c9e5e9a001
+currency
+VND
+version
+3
+createdAtUtc
+2026-09-16T02:30:00.0000000Z
+updatedAtUtc
+2026-09-16T02:45:00.0000000Z
+expiresAtUtc
+2026-09-17T02:45:00.0000000Z
+item:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:quantity
+2
+item:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:snapshot
+{"storeId":"2c4d9f91-8d8e-4f2e-ae7f-80c9e5e9a001","bagNameSnapshot":"Bakery Surprise Bag","unitPriceSnapshot":59000,"imageUrlSnapshot":"https://...","pickupStartUtc":"2026-09-16T03:00:00Z","pickupEndUtc":"2026-09-16T07:00:00Z","addedAtUtc":"2026-09-16T02:30:00Z"}
+```
+
+The API still returns a normal cart object after reconstructing the hash:
 
 ```json
 {
@@ -417,9 +489,25 @@ Behavior:
 
 ```text
 1. Read userId from JWT.
-2. Read Redis key cart:user:{userId}.
-3. If missing, return empty cart.
-4. If found, return cart.
+2. Read Redis set cart:user:{userId}:stores.
+3. For each storeId, read Redis key cart:user:{userId}:store:{storeId}.
+4. Remove stale storeIds from the index if the cart key already expired.
+5. Return all active carts for the user.
+```
+
+Optional detail endpoint:
+
+```http
+GET /api/cart/stores/{storeId}
+```
+
+Behavior:
+
+```text
+1. Read userId from JWT.
+2. Read Redis key cart:user:{userId}:store:{storeId}.
+3. If missing, return empty cart for that store or 404 depending on API decision.
+4. If found, return that cart.
 ```
 
 ### 10.2 Add Item
@@ -444,12 +532,12 @@ Behavior:
 2. Validate quantity > 0.
 3. Call Store service to get bag snapshot.
 4. Reject if bag is inactive/deleted/not purchasable.
-5. Read current cart from Redis.
-6. If cart has another storeId, reject for v1.
-7. Add item or increase quantity.
+5. Use snapshot.StoreId to select Redis key cart:user:{userId}:store:{storeId}.
+6. Add item or increase quantity in that store cart.
+7. Add storeId to cart:user:{userId}:stores.
 8. Update version and updatedAtUtc.
-9. Save cart JSON to Redis with TTL.
-10. Return updated cart.
+9. Save item fields to Redis Hash and refresh TTL.
+10. Return updated store cart.
 ```
 
 ### 10.3 Update Quantity
@@ -470,13 +558,14 @@ Behavior:
 
 ```text
 1. Read userId from JWT.
-2. Read cart from Redis.
-3. Find item by bagId.
-4. If quantity <= 0, remove item or reject depending on API decision.
-5. Update quantity.
-6. Update version and updatedAtUtc.
-7. Save cart with refreshed TTL.
-8. Return updated cart.
+2. Use storeId route/query/body field to select cart:user:{userId}:store:{storeId}.
+3. Read cart from Redis.
+4. Find item by bagId.
+5. If quantity <= 0, remove item or reject depending on API decision.
+6. Update quantity.
+7. Update version and updatedAtUtc.
+8. Update item quantity in Redis Hash and refresh TTL.
+9. Return updated store cart.
 ```
 
 ### 10.4 Remove Item
@@ -489,11 +578,11 @@ Behavior:
 
 ```text
 1. Read userId from JWT.
-2. Read cart from Redis.
+2. Use storeId route/query/body field to select cart:user:{userId}:store:{storeId}.
 3. Remove item.
-4. If no items remain, delete Redis key.
-5. Otherwise save updated cart with refreshed TTL.
-6. Return updated cart.
+4. If no items remain, delete that store cart key and remove storeId from cart:user:{userId}:stores.
+5. Otherwise refresh TTL.
+6. Return updated store cart.
 ```
 
 ### 10.5 Clear Cart
@@ -506,8 +595,9 @@ Behavior:
 
 ```text
 1. Read userId from JWT.
-2. Delete Redis key cart:user:{userId}.
-3. Return NoContent.
+2. If clearing one store cart, delete cart:user:{userId}:store:{storeId}.
+3. If clearing all carts, delete all store cart keys from cart:user:{userId}:stores.
+4. Return NoContent.
 ```
 
 ### 10.6 Checkout From Cart
@@ -521,16 +611,17 @@ Behavior:
 
 ```text
 1. Read userId from JWT.
-2. Acquire checkout lock checkout-lock:user:{userId}.
-3. Read cart from Redis.
-4. Reject if cart is missing or empty.
-5. Optionally call Store to pre-check bag active/pickup status.
-6. Convert Redis cart items to existing CreateOrder input.
-7. Create Pending order using existing Order logic.
-8. Publish order.created using existing outbox flow.
-9. Delete Redis cart only after order creation succeeds.
-10. Release checkout lock.
-11. Return orderId and Pending status.
+2. Read selected storeId from request.
+3. Acquire checkout lock checkout-lock:user:{userId}:store:{storeId}.
+4. Read cart from Redis key cart:user:{userId}:store:{storeId}.
+5. Reject if cart is missing or empty.
+6. Optionally call Store to pre-check bag active/pickup status.
+7. Convert Redis cart items to existing CreateOrder input.
+8. Create Pending order using existing Order logic.
+9. Publish order.created using existing outbox flow.
+10. Delete only that store cart after order creation succeeds.
+11. Release checkout lock.
+12. Return orderId and Pending status.
 ```
 
 The existing saga continues:
@@ -583,29 +674,41 @@ Tasks:
 
 ```text
 1. Add StackExchange.Redis package to Cart.Infrastructure.
-2. Add RedisOptions:
+2. Add RedisSettings:
    - ConnectionString
    - CartTtlHours
    - CheckoutLockSeconds
 3. Register IConnectionMultiplexer as singleton.
-4. Create ICartRepository in Application or Domain boundary.
+4. Create ICartRepository in Domain boundary.
 5. Implement RedisCartRepository in Infrastructure.
 6. Implement methods:
-   - GetAsync(userId)
+   - GetCartsAsync(userId)
+   - GetAsync(userId, storeId)
    - SetAsync(cart, ttl)
-   - DeleteAsync(userId)
-   - AcquireCheckoutLockAsync(userId)
-   - ReleaseCheckoutLockAsync(userId)
-7. Store cart as JSON string.
+   - DeleteAsync(userId, storeId)
+   - DeleteAllAsync(userId)
+   - AddOrIncrementItemAsync(userId, item, ttl)
+   - SetItemQuantityAsync(userId, storeId, bagId, quantity, ttl)
+   - RemoveItemAsync(userId, storeId, bagId, ttl)
+   - AcquireCheckoutLockAsync(userId, storeId)
+   - ReleaseCheckoutLockAsync(userId, storeId)
+7. Store cart as Redis Hash:
+   - metadata fields for storeId, currency, version, timestamps
+   - item:{bagId}:quantity fields for quantities
+   - item:{bagId}:snapshot fields for display/order snapshots
+8. Maintain cart:user:{userId}:stores as a Redis Set index of active store carts.
+9. Use Lua scripts where a cart mutation needs multiple Redis operations to be atomic.
 ```
 
 Exit criteria:
 
 ```text
-Can save cart to Redis.
-Can read cart from Redis.
-Can delete cart from Redis.
-TTL is applied.
+Can save cart hash to Redis.
+Can read and reconstruct one store cart from Redis hash.
+Can list all active carts for a user through the store index.
+Can delete cart hash from Redis.
+TTL is applied and refreshed on mutations.
+Item quantity updates do not overwrite unrelated item updates.
 ```
 
 ### Day 3 - 2026-09-18: Implement Cart Application Logic
@@ -630,8 +733,10 @@ Tasks:
    - GetBagCartSnapshotAsync(bagId)
 5. Implement StoreCatalogHttpClient.
 6. On add item, fetch bag snapshot from Store.
-7. Enforce one-store-per-cart.
-8. Refresh TTL on every mutation.
+7. Group bags from the same store into the same Redis cart.
+8. Allow one user to have multiple carts, one per store.
+9. Use Redis Hash item-level repository methods for mutations.
+10. Refresh TTL on every mutation.
 ```
 
 Exit criteria:
@@ -651,18 +756,19 @@ Tasks:
 1. Add CartController.
 2. Implement:
    - GET /api/cart
+   - GET /api/cart/stores/{storeId}
    - POST /api/cart/items
    - PATCH /api/cart/items/{bagId}
    - DELETE /api/cart/items/{bagId}
    - DELETE /api/cart
 3. Read userId from JWT, not request body.
-4. Return empty cart if Redis key does not exist.
-5. Add clear error responses:
+4. Return all active store carts for GET /api/cart.
+5. Use storeId to update/remove/checkout one specific cart when needed.
+6. Add clear error responses:
    - invalid quantity
    - bag not found
-   - mixed-store cart
    - Redis unavailable
-6. Test manually with Postman/Swagger.
+7. Test manually with Postman/Swagger.
 ```
 
 Exit criteria:
@@ -670,7 +776,8 @@ Exit criteria:
 ```text
 Frontend can replace useState-only writes with Cart API calls.
 Reload can restore cart through GET /api/cart.
-Cart survives login from another device because key is based on userId.
+Cart survives login from another device because keys are based on userId.
+Bags from different stores appear as separate carts.
 ```
 
 ### Day 5 - 2026-09-20: Integrate Checkout From Cart
@@ -683,13 +790,14 @@ Tasks:
    - POST /api/orders/checkout-from-cart
 3. In checkout handler:
    - read userId from JWT
-   - acquire checkout lock
-   - get cart from Cart service
+   - read selected storeId/cartId from request
+   - acquire checkout lock for userId + storeId
+   - get selected store cart from Cart service
    - reject empty cart
    - optionally pre-check active bags with Store
    - map cart items to existing create order command
    - call existing create order logic
-   - delete cart after order creation succeeds
+   - delete selected store cart after order creation succeeds
    - release checkout lock
 4. Keep existing order saga unchanged after order.created.
 5. Add frontend flow:
@@ -702,7 +810,7 @@ Exit criteria:
 
 ```text
 Frontend no longer sends list products from useState to create order.
-Order is created from Redis cart snapshot.
+Order is created from the selected Redis store-cart snapshot.
 Existing saga still completes end-to-end.
 ```
 
@@ -717,13 +825,13 @@ Tasks:
    - cart still appears
 2. Test cross-device:
    - login same user elsewhere
-   - GET /api/cart returns same cart
+   - GET /api/cart returns same active store carts
 3. Test update quantity.
 4. Test remove item.
 5. Test clear cart.
-6. Test mixed-store rejection if v1 allows only one store.
+6. Test multiple store carts for the same user.
 7. Test checkout from empty cart.
-8. Test double-click checkout.
+8. Test double-click checkout for the same store cart.
 9. Test Store reservation failure still works.
 10. Test Payment success still completes order.
 11. Test Payment failure/expiration still releases inventory.
@@ -784,8 +892,9 @@ docker exec -it stealdeal-redis redis-cli
 
 ```text
 KEYS cart:user:*
-GET cart:user:{userId}
-TTL cart:user:{userId}
+SMEMBERS cart:user:{userId}:stores
+HGETALL cart:user:{userId}:store:{storeId}
+TTL cart:user:{userId}:store:{storeId}
 ```
 
 ## 14. Final Target Flow
@@ -794,18 +903,20 @@ TTL cart:user:{userId}
 Buyer adds bag
   -> Frontend calls Cart API
   -> Cart calls Store for bag snapshot
-  -> Cart saves Redis key cart:user:{userId}
+  -> Cart saves Redis key cart:user:{userId}:store:{storeId}
+  -> Cart indexes storeId in cart:user:{userId}:stores
 
 Buyer reloads or logs in elsewhere
   -> Frontend calls GET /api/cart
-  -> Cart loads Redis cart
+  -> Cart loads all active store carts
 
 Buyer places order
-  -> Frontend calls Order checkout-from-cart
-  -> Order reads cart from Cart service
+  -> Frontend chooses one store cart
+  -> Frontend calls Order checkout-from-cart with storeId
+  -> Order reads selected store cart from Cart service
   -> Order creates Pending order
   -> Order publishes order.created
-  -> Order deletes cart after successful creation
+  -> Order deletes selected store cart after successful creation
 
 Existing saga continues
   -> Store reserves inventory
@@ -824,4 +935,3 @@ Use Store service for bag snapshot and final inventory reservation.
 Do not trust frontend cart details for final order/payment.
 Do not add SQL DB for cart detail unless you need long-term abandoned-cart analytics.
 ```
-

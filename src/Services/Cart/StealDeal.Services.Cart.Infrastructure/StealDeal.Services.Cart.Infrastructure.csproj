@@ -11,4 +11,8 @@
     <ProjectReference Include="..\StealDeal.Services.Cart.Domain\StealDeal.Services.Cart.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.7.27" />
+  </ItemGroup>
+
 </Project>

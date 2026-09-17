@@ -1,14 +1,40 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using StackExchange.Redis;
 using StealDeal.Services.Cart.API.Middlewares;
+using StealDeal.Services.Cart.Application.Configuration;
+using StealDeal.Services.Cart.Application.Services;
+using StealDeal.Services.Cart.Application.Services.Interfaces;
+using StealDeal.Services.Cart.Domain.Interfaces.Repositories;
+using StealDeal.Services.Cart.Infrastructure.Clients;
 using StealDeal.Services.Cart.Infrastructure.Configuration;
+using StealDeal.Services.Cart.Infrastructure.Repositories;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+builder.Services.Configure<StoreServiceSettings>(builder.Configuration.GetSection("StoreService"));
+
+var cartSettings = builder.Configuration.GetSection("Redis").Get<CartSettings>() ?? new CartSettings();
+builder.Services.AddSingleton(cartSettings);
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+{
+    var redisSettings = serviceProvider.GetRequiredService<IOptions<RedisSettings>>().Value;
+    return ConnectionMultiplexer.Connect(redisSettings.ConnectionString);
+});
+
+builder.Services.AddScoped<ICartRepository, RedisCartRepository>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddHttpClient<IStoreCatalogClient, StoreCatalogHttpClient>((serviceProvider, httpClient) =>
+{
+    var storeSettings = serviceProvider.GetRequiredService<IOptions<StoreServiceSettings>>().Value;
+    httpClient.BaseAddress = new Uri(storeSettings.BaseUrl.TrimEnd('/') + "/");
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
