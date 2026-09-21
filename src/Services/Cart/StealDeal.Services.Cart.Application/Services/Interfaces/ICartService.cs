@@ -36,5 +36,16 @@ namespace StealDeal.Services.Cart.Application.Services.Interfaces
             Guid userId,
             Guid? storeId = null,
             CancellationToken cancellationToken = default);
+
+        Task<string> AcquireCheckoutLockAsync(
+            Guid userId,
+            Guid storeId,
+            CancellationToken cancellationToken = default);
+
+        Task ReleaseCheckoutLockAsync(
+            Guid userId,
+            Guid storeId,
+            string lockToken,
+            CancellationToken cancellationToken = default);
     }
 }

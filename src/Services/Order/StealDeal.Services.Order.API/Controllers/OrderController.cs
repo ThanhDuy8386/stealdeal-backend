@@ -13,10 +13,14 @@ namespace StealDeal.Services.Order.API.Controllers
     public class OrderController : ControllerBase
     {
         private readonly IOrderService _orderService;
+        private readonly IOrderCheckoutService _orderCheckoutService;
 
-        public OrderController(IOrderService orderService)
+        public OrderController(
+            IOrderService orderService,
+            IOrderCheckoutService orderCheckoutService)
         {
             _orderService = orderService;
+            _orderCheckoutService = orderCheckoutService;
         }
 
         [HttpPost]
@@ -26,6 +30,23 @@ namespace StealDeal.Services.Order.API.Controllers
             var userId = GetCurrentUserId();
             var result = await _orderService.CreateOrderAsync(userId, request);
             // var result = await _orderService.CreateOrderAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        }
+
+        [HttpPost("checkout-from-cart")]
+        [Authorize]
+        public async Task<IActionResult> CheckoutFromCart(
+            [FromBody] CheckoutFromCartRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var accessToken = GetBearerToken();
+            var result = await _orderCheckoutService.CheckoutFromCartAsync(
+                userId,
+                accessToken,
+                request,
+                cancellationToken);
+
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -104,6 +125,17 @@ namespace StealDeal.Services.Order.API.Controllers
                 throw new Application.Exceptions.UnauthorizedException("User role is missing.");
 
             return roles;
+        }
+
+        private string GetBearerToken()
+        {
+            var authorization = Request.Headers.Authorization.ToString();
+            const string bearerPrefix = "Bearer ";
+
+            if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new Application.Exceptions.UnauthorizedException("Bearer token is missing.");
+
+            return authorization[bearerPrefix.Length..].Trim();
         }
     }
 }

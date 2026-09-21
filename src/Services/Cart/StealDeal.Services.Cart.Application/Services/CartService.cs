@@ -14,6 +14,7 @@ namespace StealDeal.Services.Cart.Application.Services
         private readonly ICartRepository _cartRepository;
         private readonly IStoreCatalogClient _storeCatalogClient;
         private readonly TimeSpan _cartTtl;
+        private readonly TimeSpan _checkoutLockTtl;
 
         public CartService(
             ICartRepository cartRepository,
@@ -28,6 +29,12 @@ namespace StealDeal.Services.Cart.Application.Services
                 : cartSettings.CartTtlHours;
 
             _cartTtl = TimeSpan.FromHours(ttlHours);
+
+            var checkoutLockSeconds = cartSettings.CheckoutLockSeconds <= 0
+                ? 5
+                : cartSettings.CheckoutLockSeconds;
+
+            _checkoutLockTtl = TimeSpan.FromSeconds(checkoutLockSeconds);
         }
 
         public async Task<IReadOnlyList<CartResponse>> GetCartsAsync(
@@ -190,6 +197,55 @@ namespace StealDeal.Services.Cart.Application.Services
             }
 
             await _cartRepository.DeleteAllAsync(userId, cancellationToken);
+        }
+
+        public async Task<string> AcquireCheckoutLockAsync(
+            Guid userId,
+            Guid storeId,
+            CancellationToken cancellationToken = default)
+        {
+            ValidateUserId(userId);
+            ValidateStoreId(storeId);
+
+            var cart = await _cartRepository.GetAsync(userId, storeId, cancellationToken);
+            if (cart is null || cart.Items.Count == 0)
+            {
+                throw new BadRequestException("Cart is empty or no longer available.");
+            }
+
+            var lockToken = await _cartRepository.AcquireCheckoutLockAsync(
+                userId,
+                storeId,
+                _checkoutLockTtl,
+                cancellationToken);
+
+            if (lockToken is null)
+            {
+                throw new ConflictException("Checkout is already in progress for this cart.");
+            }
+
+            return lockToken;
+        }
+
+        public async Task ReleaseCheckoutLockAsync(
+            Guid userId,
+            Guid storeId,
+            string lockToken,
+            CancellationToken cancellationToken = default)
+        {
+            ValidateUserId(userId);
+            ValidateStoreId(storeId);
+
+            if (string.IsNullOrWhiteSpace(lockToken))
+            {
+                return;
+            }
+
+            await _cartRepository.ReleaseCheckoutLockAsync(
+                userId,
+                storeId,
+                lockToken,
+                cancellationToken);
         }
 
         private static UserCart CreateEmptyCart(Guid userId, Guid storeId)
