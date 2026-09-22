@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="StealDeal.Services.Cart.API/StealDeal.Services.Cart.API.csproj" />
+  <Project Path="StealDeal.Services.Cart.Application/StealDeal.Services.Cart.Application.csproj" />
+  <Project Path="StealDeal.Services.Cart.Domain/StealDeal.Services.Cart.Domain.csproj" />
+  <Project Path="StealDeal.Services.Cart.Infrastructure/StealDeal.Services.Cart.Infrastructure.csproj" />
+</Solution>

@@ -11,6 +11,7 @@ using StealDeal.Services.Order.Application.Services;
 using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Domain.Interfaces;
 using StealDeal.Services.Order.Infrastructure.BackgroundServices;
+using StealDeal.Services.Order.Infrastructure.Clients;
 using StealDeal.Services.Order.Infrastructure.Configuration;
 using StealDeal.Services.Order.Infrastructure.Messaging;
 using StealDeal.Services.Order.Infrastructure.Persistency;
@@ -25,6 +26,8 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<OrderStatusConsumerSettings>(builder.Configuration.GetSection("OrderStatusConsumer"));
+builder.Services.Configure<CartServiceSettings>(builder.Configuration.GetSection("CartService"));
+builder.Services.Configure<StoreServiceSettings>(builder.Configuration.GetSection("StoreService"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
@@ -35,6 +38,7 @@ builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageReposito
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IOrderCheckoutService, OrderCheckoutService>();
 builder.Services.AddScoped<IPickupDisputeService, PickupDisputeService>();
 builder.Services.AddScoped<IIntegrationEventHandler<InventoryReservationFailedEvent>, OrderStatusEventHandler>();
 builder.Services.AddScoped<IIntegrationEventHandler<PaymentFailedEvent>, OrderStatusEventHandler>();
@@ -43,6 +47,22 @@ builder.Services.AddScoped<IIntegrationEventHandler<PaymentCompletedEvent>, Orde
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 builder.Services.AddHostedService<OutboxMessageProcessor>();
 builder.Services.AddHostedService<OrderStatusConsumer>();
+
+builder.Services.AddHttpClient<ICartClient, CartHttpClient>((serviceProvider, httpClient) =>
+{
+    var settings = serviceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<CartServiceSettings>>()
+        .Value;
+    httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+});
+
+builder.Services.AddHttpClient<IStoreCatalogClient, StoreCatalogHttpClient>((serviceProvider, httpClient) =>
+{
+    var settings = serviceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<StoreServiceSettings>>()
+        .Value;
+    httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+});
 
 // ── Authentication / JWT ──────────────────────────────────
 var jwtSection = builder.Configuration.GetSection("Jwt");
