@@ -1,0 +1,149 @@
+name: stealdeal-services
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  identity-api:
+    build: ./Identity
+    ports:
+      - "5158:5158"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5158
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__IdentityDb: "Server=sqlserver,1433;Database=StealDealIdentityDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+    depends_on:
+      sqlserver:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  notification-api:
+    build: ./Notification
+    ports:
+      - "5053:5053"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5053
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__NotificationDb: "Server=sqlserver,1433;Database=StealDealNotificationDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+    depends_on:
+      sqlserver:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  store-api:
+    build: ./Store
+    ports:
+      - "5169:5169"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5169
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__StoreDb: "Server=sqlserver,1433;Database=StealDealStoreDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      Services__OrderServiceUrl: http://order-api:5165
+    depends_on:
+      sqlserver:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  cart-api:
+    build: ./Cart
+    ports:
+      - "5185:5185"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5185
+      Redis__ConnectionString: redis:6379
+      StoreService__BaseUrl: http://store-api:5169
+    depends_on:
+      redis:
+        condition: service_healthy
+      store-api:
+        condition: service_started
+
+  order-api:
+    build: ./Order
+    ports:
+      - "5165:5165"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5165
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__OrderDb: "Server=sqlserver,1433;Database=StealDealOrderDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      CartService__BaseUrl: http://cart-api:5185
+      StoreService__BaseUrl: http://store-api:5169
+    depends_on:
+      sqlserver:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      cart-api:
+        condition: service_started
+      store-api:
+        condition: service_started
+
+  payment-api:
+    build: ./Payment
+    ports:
+      - "5155:5155"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5155
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__PaymentDb: "Server=sqlserver,1433;Database=StealDealPaymentDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+    depends_on:
+      sqlserver:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  sqlserver-data:
