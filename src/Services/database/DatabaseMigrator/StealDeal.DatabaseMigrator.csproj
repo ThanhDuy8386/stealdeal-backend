@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Identity\StealDeal.Services.Identity.Infrastructure\StealDeal.Services.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Notification\StealDeal.Services.Notification.Infrastructure\StealDeal.Services.Notification.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Order\StealDeal.Services.Order.Infrastructure\StealDeal.Services.Order.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Payment\StealDeal.Services.Payment.Infrastructure\StealDeal.Services.Payment.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Store\StealDeal.Services.Store.Infrastructure\StealDeal.Services.Store.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

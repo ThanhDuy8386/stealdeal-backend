@@ -33,6 +33,20 @@ services:
       timeout: 5s
       retries: 10
 
+  database-migrator:
+    profiles:
+      - database
+    build:
+      context: .
+      dockerfile: database/DatabaseMigrator/Dockerfile
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: 1433
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    depends_on:
+      sqlserver:
+        condition: service_started
+
   identity-api:
     build: ./Identity
     ports:
