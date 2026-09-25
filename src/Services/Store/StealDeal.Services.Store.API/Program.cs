@@ -42,6 +42,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICategorySuggestionService, CategorySuggestionService>();
 builder.Services.AddScoped<IStoreProfileService, StoreProfileService>();
 builder.Services.AddScoped<ISurpriseBagService, SurpriseBagService>();
 builder.Services.AddScoped<IStoreReviewService, StoreReviewService>();

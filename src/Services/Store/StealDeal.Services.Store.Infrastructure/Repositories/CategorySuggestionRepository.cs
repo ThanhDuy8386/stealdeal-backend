@@ -31,7 +31,9 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
 
         public async Task<CategorySuggestion?> GetByIdAsync(Guid id)
         {
-            return await _context.CategorySuggestions.FindAsync(id);
+            return await _context.CategorySuggestions
+                .Include(cs => cs.Store)
+                .FirstOrDefaultAsync(cs => cs.Id == id);
         }
 
         public async Task<IEnumerable<CategorySuggestion>> GetByStatusAsync(string status)
