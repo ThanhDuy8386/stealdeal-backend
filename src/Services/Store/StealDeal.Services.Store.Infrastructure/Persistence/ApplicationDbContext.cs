@@ -13,6 +13,7 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
         public DbSet<StoreProfile> StoreProfiles { get; set; }
         public DbSet<SurpriseBag> SurpriseBags { get; set; }
         public DbSet<StoreReview> StoreReviews { get; set; }
+        public DbSet<CategorySuggestion> CategorySuggestions { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
         public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
@@ -95,6 +96,26 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
                       .WithMany(b => b.StoreReviews)
                       .HasForeignKey(e => e.BagId)
                       .OnDelete(DeleteBehavior.NoAction); // tránh cascade cycle
+            });
+
+            // CategorySuggestion Configuration
+            modelBuilder.Entity<CategorySuggestion>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.SuggestedName).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.AdminComment).HasMaxLength(2000);
+                entity.Property(e => e.CreatedAt).IsRequired();
+
+                // indexes for efficient querying
+                entity.HasIndex(e => e.StoreId);
+                entity.HasIndex(e => e.Status);
+
+                // foreign key relationship with StoreProfile
+                entity.HasOne(e => e.Store)
+                      .WithMany()
+                      .HasForeignKey(e => e.StoreId)
+                      .OnDelete(DeleteBehavior.NoAction);
             });
 
             // OutboxMessage Configuration
