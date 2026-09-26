@@ -17,10 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\StealDeal.Services.Store.Application\StealDeal.Services.Store.Application.csproj" />
     <ProjectReference Include="..\StealDeal.Services.Store.Infrastructure\StealDeal.Services.Store.Infrastructure.csproj" />
   </ItemGroup>

@@ -31,6 +31,7 @@ builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<ICategorySuggestionRepository, CategorySuggestionRepository>();
 builder.Services.AddScoped<IStoreProfileRepository, StoreProfileRepository>();
 builder.Services.AddScoped<ISurpriseBagRepository, SurpriseBagRepository>();
 builder.Services.AddScoped<IStoreReviewRepository, StoreReviewRepository>();
@@ -41,6 +42,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ── Application Services ───────────────────────────────────
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICategorySuggestionService, CategorySuggestionService>();
 builder.Services.AddScoped<IStoreProfileService, StoreProfileService>();
 builder.Services.AddScoped<ISurpriseBagService, SurpriseBagService>();
 builder.Services.AddScoped<IStoreReviewService, StoreReviewService>();

@@ -320,6 +320,10 @@ permissions, including the ability to manage accounts with either admin role.
 | `POST` | `/api/categories` | Admin | `CreateCategoryRequest` | `201 CategoryResponse` |
 | `PUT` | `/api/categories/{id}` | Admin | `UpdateCategoryRequest` | `200 CategoryResponse` |
 | `DELETE` | `/api/categories/{id}` | Admin | none | `204 NoContent` |
+| `POST` | `/api/category-suggestions` | Seller | `CreateCategorySuggestionRequest` | `200 CategorySuggestionResponse` |
+| `GET` | `/api/category-suggestions/me` | Seller | none | `200 CategorySuggestionResponse[]` |
+| `GET` | `/api/category-suggestions/pending` | Admin | none | `200 CategorySuggestionResponse[]` |
+| `POST` | `/api/category-suggestions/{id}/review` | Admin | `ReviewCategorySuggestionRequest` | `200 CategorySuggestionResponse` |
 | `GET` | `/api/stores` | Public | none | `200 StoreProfileResponse[]` |
 | `GET` | `/api/stores/pending` | Admin or SuperAdmin | none | `200 PendingStoreResponse[]` |
 | `GET` | `/api/stores/{id}` | Public | none | `200 StoreProfileResponse` |
@@ -400,6 +404,20 @@ the timestamp in `repliedAt`. Reply text cannot be empty whitespace.
 
 `DELETE /api/reviews/{id}` allows an admin or superadmin to permanently delete a review (e.g. confirmed policy violation), automatically recalculating the store's `ratingScore` and `reviewCount`.
 
+`POST /api/category-suggestions` allows an active and verified store owner (`Seller`) to suggest a new category:
+- Fails with `403 Forbidden` if the store does not exist, is inactive, or is unverified.
+- Fails with `409 Conflict` if an official category with the same normalized name/slug already exists.
+- Fails with `409 Conflict` if the seller already has an active `Pending` suggestion for the same category name.
+- Successfully creates a `CategorySuggestion` with status `Pending`.
+
+`GET /api/category-suggestions/me` returns all category suggestions submitted by the authenticated seller's store, ordered by newest first (`createdAt DESC`).
+
+`GET /api/category-suggestions/pending` allows admins to list all suggestions with status `Pending`, ordered by oldest first (`createdAt ASC`), eager-loading store profile information.
+
+`POST /api/category-suggestions/{id}/review` allows admins to review a pending suggestion (`400 Bad Request` if already reviewed):
+- `status: "Approved"` generates a slug from `officialCategoryName` (if provided to fix typos/casing) or `suggestedName`, verifies slug uniqueness against official categories (`409 Conflict`), inserts a new active `Category` with `iconUrl`, and updates suggestion status to `Approved`.
+- `status: "Rejected"` updates suggestion status to `Rejected` and records `adminComment`.
+
 ### Requests
 
 ```ts
@@ -411,6 +429,17 @@ export interface CreateCategoryRequest {
 
 export interface UpdateCategoryRequest extends CreateCategoryRequest {
   isActive: boolean;
+}
+
+export interface CreateCategorySuggestionRequest {
+  suggestedName: string;
+}
+
+export interface ReviewCategorySuggestionRequest {
+  status: "Approved" | "Rejected" | string;
+  adminComment?: string | null;
+  iconUrl?: string | null;
+  officialCategoryName?: string | null;
 }
 
 export interface CreateStoreRequest {
@@ -487,6 +516,16 @@ export interface CategoryResponse {
   slug: string;
   iconUrl: string | null;
   isActive: boolean;
+}
+
+export interface CategorySuggestionResponse {
+  id: UUID;
+  storeId: UUID;
+  storeName: string;
+  suggestedName: string;
+  status: "Pending" | "Approved" | "Rejected" | string;
+  adminComment?: string | null;
+  createdAt: ISODateTime;
 }
 
 export interface StoreProfileResponse {
