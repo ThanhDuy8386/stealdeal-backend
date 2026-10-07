@@ -15,6 +15,8 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Name = request.Name.Trim(),
                 Description = request.Description?.Trim(),
                 Address = request.Address?.Trim(),
+                Province = string.IsNullOrWhiteSpace(request.Province) ? null : request.Province.Trim(),
+                Commune = string.IsNullOrWhiteSpace(request.Commune) ? null : request.Commune.Trim(),
                 Latitude = request.Latitude,
                 Longitude = request.Longitude,
                 Phone = request.Phone?.Trim(),
@@ -34,6 +36,8 @@ namespace StealDeal.Services.Store.Application.Mappings
             store.Name = request.Name.Trim();
             store.Description = request.Description?.Trim();
             store.Address = request.Address?.Trim();
+            store.Province = string.IsNullOrWhiteSpace(request.Province) ? null : request.Province.Trim();
+            store.Commune = string.IsNullOrWhiteSpace(request.Commune) ? null : request.Commune.Trim();
             store.Latitude = request.Latitude;
             store.Longitude = request.Longitude;
             store.Phone = request.Phone?.Trim();
@@ -52,6 +56,8 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Name = store.Name,
                 Description = store.Description,
                 Address = store.Address,
+                Province = store.Province,
+                Commune = store.Commune,
                 Latitude = store.Latitude,
                 Longitude = store.Longitude,
                 AvatarUrl = store.AvatarUrl,
@@ -73,6 +79,8 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Name = store.Name,
                 Description = store.Description,
                 Address = store.Address,
+                Province = store.Province,
+                Commune = store.Commune,
                 Latitude = store.Latitude,
                 Longitude = store.Longitude,
                 Phone = store.Phone,
