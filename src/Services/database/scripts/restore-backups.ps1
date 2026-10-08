@@ -101,6 +101,7 @@ foreach ($database in $databases) {
         -P $script:SqlPassword `
         -C `
         -W `
+        -h -1 `
         -s "," `
         -Q $fileListQuery
 
