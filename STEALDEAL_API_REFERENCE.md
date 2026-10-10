@@ -333,6 +333,8 @@ permissions, including the ability to manage accounts with either admin role.
 | `PATCH` | `/api/stores/{id}/verify` | Admin | none | `204 NoContent` |
 | `DELETE` | `/api/stores/{id}/reject` | Admin or SuperAdmin | none | `204 NoContent` |
 | `PATCH` | `/api/stores/{id}/toggle-active` | Admin | none | `204 NoContent` |
+| `GET` | `/api/locations/autocomplete` | Bearer | `LocationAutocompleteQueryRequest` query | `200 AutocompleteSuggestionResponse[]` |
+| `GET` | `/api/locations/place-detail` | Bearer | `LocationPlaceDetailQueryRequest` query | `200 PlaceDetailResponse` |
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
 | `GET` | `/api/bags/store/{storeId}` | Public | none | `200 SurpriseBagResponse[]` |
@@ -418,9 +420,28 @@ the timestamp in `repliedAt`. Reply text cannot be empty whitespace.
 - `status: "Approved"` generates a slug from `officialCategoryName` (if provided to fix typos/casing) or `suggestedName`, verifies slug uniqueness against official categories (`409 Conflict`), inserts a new active `Category` with `iconUrl`, and updates suggestion status to `Approved`.
 - `status: "Rejected"` updates suggestion status to `Rejected` and records `adminComment`.
 
+`GET /api/locations/autocomplete` and `GET /api/locations/place-detail` proxy map/location queries through the backend (Geoapify by default, switchable to Goong) so provider API keys remain secret:
+- Requires authentication (`Bearer`).
+- Enforces per-user rate limiting (30 requests/minute via `LocationPolicy`, returning `429 Too Many Requests`).
+- Results are cached in memory for 5 minutes.
+- `autocomplete` requires `input` between 3 and 200 characters, and accepts optional `sessionToken` and `latitude`/`longitude` for proximity biasing.
+- `place-detail` retrieves coordinates (`latitude`, `longitude`), `formattedAddress`, and administrative units (`commune`, `province`) for a given `placeId`.
+
 ### Requests
 
 ```ts
+export interface LocationAutocompleteQueryRequest {
+  input: string;             // required; 3..200 characters
+  sessionToken?: string;     // optional session tracking
+  latitude?: number;         // optional proximity bias
+  longitude?: number;
+}
+
+export interface LocationPlaceDetailQueryRequest {
+  placeId: string;           // required place identifier
+  sessionToken?: string;     // optional session tracking
+}
+
 export interface CreateCategoryRequest {
   name: string;
   slug: string;
@@ -446,8 +467,10 @@ export interface CreateStoreRequest {
   name: string;
   description?: string | null;
   address?: string | null;
-  latitude: number;
-  longitude: number;
+  province?: string | null;
+  commune?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   phone?: string | null;
   bankAccount?: string | null;
   licenseUrl?: string | null;
@@ -534,8 +557,10 @@ export interface StoreProfileResponse {
   name: string;
   description: string | null;
   address: string | null;
-  latitude: number;
-  longitude: number;
+  province: string | null;
+  commune: string | null;
+  latitude: number | null;
+  longitude: number | null;
   avatarUrl: string | null;
   phone: string | null;
   ratingScore: number;
@@ -551,14 +576,37 @@ export interface PendingStoreResponse {
   name: string;
   description: string | null;
   address: string | null;
-  latitude: number;
-  longitude: number;
+  province: string | null;
+  commune: string | null;
+  latitude: number | null;
+  longitude: number | null;
   phone: string | null;
   avatarUrl: string | null;
   licenseUrl: string | null;
   isVerify: boolean;
   isActive: boolean;
   createdAt: ISODateTime;
+}
+
+export interface AutocompleteSuggestionResponse {
+  placeId: string;
+  description: string;
+  mainText?: string | null;
+  secondaryText?: string | null;
+  commune?: string | null;
+  province?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface PlaceDetailResponse {
+  placeId: string;
+  name?: string | null;
+  formattedAddress?: string | null;
+  latitude: number;
+  longitude: number;
+  commune?: string | null;
+  province?: string | null;
 }
 
 export interface SurpriseBagResponse {

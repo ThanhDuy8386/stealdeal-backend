@@ -40,6 +40,8 @@ namespace StealDeal.Services.Store.Infrastructure.Persistence
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
                 entity.Property(e => e.Description).HasMaxLength(2000);
                 entity.Property(e => e.Address).HasMaxLength(500);
+                entity.Property(e => e.Province).HasMaxLength(100);
+                entity.Property(e => e.Commune).HasMaxLength(100);
                 entity.Property(e => e.Latitude).HasPrecision(10, 7);
                 entity.Property(e => e.Longitude).HasPrecision(10, 7);
                 entity.Property(e => e.AvatarUrl).HasMaxLength(1000);
