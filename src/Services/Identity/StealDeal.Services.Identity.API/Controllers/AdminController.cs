@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
@@ -6,7 +6,7 @@ using StealDeal.Services.Identity.Application.Services.Interfaces;
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/identity/admin")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     public class AdminController : ControllerBase
     {

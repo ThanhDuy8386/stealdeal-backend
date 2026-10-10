@@ -1,4 +1,4 @@
-name: stealdeal-services
+﻿name: stealdeal-services
 
 services:
   sqlserver:
@@ -161,3 +161,8 @@ services:
 
 volumes:
   sqlserver-data:
+
+networks:
+  default:
+    name: stealdeal-network
+    external: true

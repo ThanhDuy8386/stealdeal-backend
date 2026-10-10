@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
@@ -7,7 +7,7 @@ using StealDeal.Services.Identity.Application.Services.Interfaces;
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/account")]
+    [Route("api/identity/account")]
     [Authorize]
     public class AccountController : ControllerBase
     {
@@ -41,9 +41,9 @@ namespace StealDeal.Services.Identity.API.Controllers
             Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Lax,
-                Path = "/api/auth",
+                Path = "/api/identity/auth",
                 IsEssential = true
             });
 

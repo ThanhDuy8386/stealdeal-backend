@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.Services.Interfaces;
@@ -7,7 +7,7 @@ using System.Security.Claims;
 namespace StealDeal.Services.Store.API.Controllers
 {
     [ApiController]
-    [Route("api/reviews")]
+    [Route("api/store/reviews")]
     public class StoreReviewController : ControllerBase
     {
         private readonly IStoreReviewService _reviewService;

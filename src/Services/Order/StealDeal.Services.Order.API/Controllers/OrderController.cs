@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +9,7 @@ using StealDeal.Services.Order.Application.Services.Interfaces;
 namespace StealDeal.Services.Order.API.Controllers
 {
     [ApiController]
-    [Route("api/orders")]
+    [Route("api/order/orders")]
     public class OrderController : ControllerBase
     {
         private readonly IOrderService _orderService;

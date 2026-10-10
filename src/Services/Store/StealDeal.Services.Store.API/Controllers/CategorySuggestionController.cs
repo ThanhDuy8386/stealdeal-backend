@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.Services.Interfaces;
@@ -7,7 +7,7 @@ using System.Security.Claims;
 namespace StealDeal.Services.Store.API.Controllers
 {
     [ApiController]
-    [Route("api/category-suggestions")]
+    [Route("api/store/category-suggestions")]
     public class CategorySuggestionController : ControllerBase
     {
         private readonly ICategorySuggestionService _categorySuggestionService;

@@ -6,7 +6,7 @@ using StealDeal.Services.Identity.Application.Services.Interfaces;
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/identity/role")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     public class RoleController : ControllerBase
     {

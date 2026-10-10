@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +9,7 @@ using StealDeal.Services.Notification.Application.Services.Interfaces;
 namespace StealDeal.Services.Notification.API.Controllers
 {
     [ApiController]
-    [Route("api/notifications")]
+    [Route("api/notification/notifications")]
     public class NotificationController : ControllerBase
     {
         private readonly INotificationService _notificationService;
