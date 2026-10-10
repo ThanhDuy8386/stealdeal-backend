@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -16,7 +17,9 @@ using StealDeal.Services.Store.Infrastructure.Persistence;
 using StealDeal.Services.Store.Infrastructure.Repositories;
 using StealDeal.Services.Store.Infrastructure.Services;
 using StealDeal.Services.Store.Infrastructure.Storage;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +31,9 @@ builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("R
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 
 builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
+builder.Services.Configure<GoongSettings>(builder.Configuration.GetSection("Goong"));
+builder.Services.Configure<GeoapifySettings>(builder.Configuration.GetSection("Geoapify"));
+builder.Services.AddMemoryCache();
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -84,6 +90,53 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too Many Requests",
+            Detail = "Rate limit exceeded. Please wait a moment and try again.",
+            Instance = context.HttpContext.Request.Path
+        };
+        await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+    };
+
+    options.AddPolicy("LocationPolicy", httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? httpContext.User.FindFirstValue("sub")
+                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                           ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    options.AddPolicy("GoongLocationPolicy", httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? httpContext.User.FindFirstValue("sub")
+                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                           ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
@@ -127,6 +180,38 @@ builder.Services.AddHttpClient<IOrderVerificationService, OrderVerificationServi
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
+builder.Services.AddHttpClient<IGoongLocationService, GoongLocationService>(client =>
+{
+    var baseUrl = builder.Configuration["Goong:BaseUrl"] ?? "https://rsapi.goong.io";
+    var timeoutSeconds = int.TryParse(builder.Configuration["Goong:TimeoutSeconds"], out var parsedTimeout)
+        ? parsedTimeout
+        : 10;
+
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
+builder.Services.AddHttpClient<GeoapifyLocationService>(client =>
+{
+    var baseUrl = builder.Configuration["Geoapify:BaseUrl"] ?? "https://api.geoapify.com";
+    var timeoutSeconds = int.TryParse(builder.Configuration["Geoapify:TimeoutSeconds"], out var parsedTimeout)
+        ? parsedTimeout
+        : 10;
+
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
+var locationProvider = builder.Configuration["LocationProvider"] ?? "Geoapify";
+if (string.Equals(locationProvider, "Goong", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<ILocationService>(sp => sp.GetRequiredService<IGoongLocationService>());
+}
+else
+{
+    builder.Services.AddScoped<ILocationService, GeoapifyLocationService>();
+}
+
 // ─────────────────────────────────────────────────────────
 var app = builder.Build();
 
@@ -147,6 +232,7 @@ app.UseHttpsRedirection();
 app.UseCors("FrontendPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 
 app.Run();
