@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
@@ -7,7 +7,7 @@ using StealDeal.Services.Identity.Application.DTOs.Responses;
 namespace Identity.StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/identity/auth")]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
@@ -105,9 +105,9 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
             Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Lax,
-                Path = "/api/auth",
+                Path = "/api/identity/auth",
                 IsEssential = true,
             });
             return Ok(new { message = "Logged out successfully." });
@@ -130,9 +130,9 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
             Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Lax,
-                Path = "/api/auth",
+                Path = "/api/identity/auth",
                 IsEssential = true,
             });
 
@@ -150,10 +150,10 @@ namespace Identity.StealDeal.Services.Identity.API.Controllers
                 new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = true,
+                    Secure = Request.IsHttps,
                     SameSite = SameSiteMode.Lax,
                     Expires = tokenResponse.RefreshTokenExpiresAt,
-                    Path = "/api/auth",
+                    Path = "/api/identity/auth",
                     IsEssential = true,
                 });
         }

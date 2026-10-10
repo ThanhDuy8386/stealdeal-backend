@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Store.Application.DTOs.Requests;
@@ -7,7 +7,7 @@ using StealDeal.Services.Store.Application.Services.Interfaces;
 namespace StealDeal.Services.Store.API.Controllers
 {
     [ApiController]
-    [Route("api/bags")]
+    [Route("api/store/bags")]
     public class SurpriseBagController : ControllerBase
     {
         private readonly ISurpriseBagService _bagService;

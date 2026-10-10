@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
 using StealDeal.Services.Identity.Application.DTOs.Responses;
@@ -7,11 +7,11 @@ using StealDeal.Services.Identity.Application.Services.Interfaces;
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/admin-auth")]
+    [Route("api/identity/admin-auth")]
     public class AdminAuthController : ControllerBase
     {
         private const string RefreshTokenCookieName = "admin_refresh_token";
-        private const string RefreshTokenCookiePath = "/api/admin-auth";
+        private const string RefreshTokenCookiePath = "/api/identity/admin-auth";
         private readonly IAdminAuthService _adminAuthService;
 
         public AdminAuthController(IAdminAuthService adminAuthService)
@@ -87,7 +87,7 @@ namespace StealDeal.Services.Identity.API.Controllers
             Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Lax,
                 Path = RefreshTokenCookiePath,
                 IsEssential = true
@@ -104,7 +104,7 @@ namespace StealDeal.Services.Identity.API.Controllers
                 new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = true,
+                    Secure = Request.IsHttps,
                     SameSite = SameSiteMode.Lax,
                     Expires = tokenResponse.RefreshTokenExpiresAt,
                     Path = RefreshTokenCookiePath,

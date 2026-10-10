@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +9,7 @@ using StealDeal.Services.Payment.Application.Services.Interfaces;
 namespace StealDeal.Services.Payment.API.Controllers
 {
     [ApiController]
-    [Route("api/transactions")]
+    [Route("api/payment/transactions")]
     public class TransactionController : ControllerBase
     {
         private readonly ITransactionService _transactionService;

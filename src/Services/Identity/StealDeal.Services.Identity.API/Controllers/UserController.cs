@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 namespace StealDeal.Services.Identity.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/identity/user")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     public class UserController : ControllerBase
     {

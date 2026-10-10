@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Payment.Application.Gateways;
@@ -9,6 +9,7 @@ namespace StealDeal.Services.Payment.API.Controllers
 {
     [ApiController]
     [AllowAnonymous]
+    [Route("api/payment/vnpay")]
     [Route("api/vnpay")]
     public class VnPayController : ControllerBase
     {

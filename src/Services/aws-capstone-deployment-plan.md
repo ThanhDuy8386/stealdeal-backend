@@ -109,7 +109,13 @@ docker network create stealdeal-network
 1. **`Dockerfile`**: Lightweight 2-stage build (`builder` -> `runner`) using `output: "standalone"` on `node:20-alpine` (~74MB image).
 2. **`nginx.conf`**: Single reverse proxy entrypoint on port 80.
    - Routes web traffic `/` to `http://frontend:3000`.
-   - Routes API traffic `/api/...` to appropriate backend containers (`identity-api:5158`, `store-api:5169`, `cart-api:5185`, `order-api:5165`, `payment-api:5155`, `notification-api:5053`).
+   - Direct service-prefix routing:
+     - `/api/identity/...` -> `http://identity-api:5158`
+     - `/api/store/...` -> `http://store-api:5169`
+     - `/api/cart/...` -> `http://cart-api:5185`
+     - `/api/order/...` -> `http://order-api:5165`
+     - `/api/payment/...` -> `http://payment-api:5155`
+     - `/api/notification/...` -> `http://notification-api:5053`
    - Enables `client_max_body_size 25M` for file/image uploads.
 3. **`docker-compose.yml`**:
    - Services: `frontend`, `nginx`.

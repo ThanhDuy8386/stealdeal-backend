@@ -1,9 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 
 namespace StealDeal.Services.Cart.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/cart/health")]
     public class HealthController : ControllerBase
     {
         [HttpGet]

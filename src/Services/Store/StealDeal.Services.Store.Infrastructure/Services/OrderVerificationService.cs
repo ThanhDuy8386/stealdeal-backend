@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using StealDeal.Services.Store.Application.Exceptions;
 using StealDeal.Services.Store.Application.Services.Interfaces;
@@ -16,7 +16,7 @@ namespace StealDeal.Services.Store.Infrastructure.Services
 
         public async Task<bool> VerifyOwnershipAsync(Guid orderId, Guid buyerId, Guid bagId)
         {
-            var url = $"api/orders/{orderId}/review-eligibility?bagId={bagId}&buyerId={buyerId}";
+            var url = $"api/order/orders/{orderId}/review-eligibility?bagId={bagId}&buyerId={buyerId}";
             HttpResponseMessage response;
 
             try

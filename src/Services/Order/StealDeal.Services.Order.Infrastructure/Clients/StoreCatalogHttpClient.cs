@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Application.Services.Interfaces;
@@ -19,7 +19,7 @@ namespace StealDeal.Services.Order.Infrastructure.Clients
             CancellationToken cancellationToken = default)
         {
             using var response = await _httpClient.GetAsync(
-                $"api/bags/{bagId}",
+                $"api/store/bags/{bagId}",
                 cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.NotFound)

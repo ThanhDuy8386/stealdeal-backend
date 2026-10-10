@@ -1,4 +1,4 @@
-using StealDeal.Services.Cart.Application.DTOs.Responses;
+﻿using StealDeal.Services.Cart.Application.DTOs.Responses;
 using StealDeal.Services.Cart.Application.Services.Interfaces;
 using System.Net;
 using System.Net.Http.Json;
@@ -19,7 +19,7 @@ namespace StealDeal.Services.Cart.Infrastructure.Clients
             CancellationToken cancellationToken = default)
         {
             var response = await _httpClient.GetAsync(
-                $"api/bags/{bagId}",
+                $"api/store/bags/{bagId}",
                 cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.NotFound)
