@@ -180,36 +180,32 @@ builder.Services.AddHttpClient<IOrderVerificationService, OrderVerificationServi
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
-builder.Services.AddHttpClient<IGoongLocationService, GoongLocationService>(client =>
-{
-    var baseUrl = builder.Configuration["Goong:BaseUrl"] ?? "https://rsapi.goong.io";
-    var timeoutSeconds = int.TryParse(builder.Configuration["Goong:TimeoutSeconds"], out var parsedTimeout)
-        ? parsedTimeout
-        : 10;
-
-    client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-});
-
-builder.Services.AddHttpClient<GeoapifyLocationService>(client =>
-{
-    var baseUrl = builder.Configuration["Geoapify:BaseUrl"] ?? "https://api.geoapify.com";
-    var timeoutSeconds = int.TryParse(builder.Configuration["Geoapify:TimeoutSeconds"], out var parsedTimeout)
-        ? parsedTimeout
-        : 10;
-
-    client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-});
-
 var locationProvider = builder.Configuration["LocationProvider"] ?? "Geoapify";
 if (string.Equals(locationProvider, "Goong", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddScoped<ILocationService>(sp => sp.GetRequiredService<IGoongLocationService>());
+    builder.Services.AddHttpClient<ILocationService, GoongLocationService>(client =>
+    {
+        var baseUrl = builder.Configuration["Goong:BaseUrl"] ?? "https://rsapi.goong.io";
+        var timeoutSeconds = int.TryParse(builder.Configuration["Goong:TimeoutSeconds"], out var parsedTimeout)
+            ? parsedTimeout
+            : 10;
+
+        client.BaseAddress = new Uri(baseUrl);
+        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+    });
 }
 else
 {
-    builder.Services.AddScoped<ILocationService, GeoapifyLocationService>();
+    builder.Services.AddHttpClient<ILocationService, GeoapifyLocationService>(client =>
+    {
+        var baseUrl = builder.Configuration["Geoapify:BaseUrl"] ?? "https://api.geoapify.com";
+        var timeoutSeconds = int.TryParse(builder.Configuration["Geoapify:TimeoutSeconds"], out var parsedTimeout)
+            ? parsedTimeout
+            : 10;
+
+        client.BaseAddress = new Uri(baseUrl);
+        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+    });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -228,7 +224,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors("FrontendPolicy");
 app.UseAuthentication();
 app.UseAuthorization();

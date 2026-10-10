@@ -55,7 +55,8 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             if (_cache.TryGetValue(cacheKey, out List<AutocompleteSuggestionResponse>? cached) && cached is not null)
                 return cached;
 
-            var url = $"/v1/geocode/autocomplete?text={Uri.EscapeDataString(trimmedInput)}&filter=countrycode:vn&lang=vi&apiKey={Uri.EscapeDataString(_settings.ApiKey)}";
+            var baseUrl = _settings.BaseUrl.TrimEnd('/');
+            var url = $"{baseUrl}/v1/geocode/autocomplete?text={Uri.EscapeDataString(trimmedInput)}&filter=countrycode:vn&lang=vi&apiKey={Uri.EscapeDataString(_settings.ApiKey)}";
 
             if (!string.IsNullOrEmpty(proximityParam))
                 url += $"&bias=proximity:{Uri.EscapeDataString(proximityParam)}";
@@ -108,7 +109,8 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             if (_cache.TryGetValue(cacheKey, out PlaceDetailResponse? cached) && cached is not null)
                 return cached;
 
-            var url = $"/v2/place-details?id={Uri.EscapeDataString(trimmedPlaceId)}&lang=vi&apiKey={Uri.EscapeDataString(_settings.ApiKey)}";
+            var baseUrl = _settings.BaseUrl.TrimEnd('/');
+            var url = $"{baseUrl}/v2/place-details?id={Uri.EscapeDataString(trimmedPlaceId)}&lang=vi&apiKey={Uri.EscapeDataString(_settings.ApiKey)}";
 
             var response = await SendRequestAsync(url, cancellationToken);
             var payload = await response.Content.ReadFromJsonAsync<GeoapifyFeatureCollection>(cancellationToken: cancellationToken);

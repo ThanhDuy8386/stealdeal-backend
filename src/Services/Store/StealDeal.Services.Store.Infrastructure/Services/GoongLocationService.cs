@@ -57,7 +57,8 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             if (_cache.TryGetValue(cacheKey, out List<AutocompleteSuggestionResponse>? cached) && cached is not null)
                 return cached;
 
-            var url = $"/v2/place/autocomplete?api_key={Uri.EscapeDataString(_settings.ApiKey)}&input={Uri.EscapeDataString(trimmedInput)}";
+            var baseUrl = _settings.BaseUrl.TrimEnd('/');
+            var url = $"{baseUrl}/v2/place/autocomplete?api_key={Uri.EscapeDataString(_settings.ApiKey)}&input={Uri.EscapeDataString(trimmedInput)}";
 
             if (!string.IsNullOrEmpty(locationParam))
                 url += $"&location={Uri.EscapeDataString(locationParam)}";
@@ -109,7 +110,8 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             if (_cache.TryGetValue(cacheKey, out PlaceDetailResponse? cached) && cached is not null)
                 return cached;
 
-            var url = $"/v2/place/detail?api_key={Uri.EscapeDataString(_settings.ApiKey)}&place_id={Uri.EscapeDataString(trimmedPlaceId)}";
+            var baseUrl = _settings.BaseUrl.TrimEnd('/');
+            var url = $"{baseUrl}/v2/place/detail?api_key={Uri.EscapeDataString(_settings.ApiKey)}&place_id={Uri.EscapeDataString(trimmedPlaceId)}";
 
             if (!string.IsNullOrWhiteSpace(sessionToken))
                 url += $"&sessiontoken={Uri.EscapeDataString(sessionToken.Trim())}";
