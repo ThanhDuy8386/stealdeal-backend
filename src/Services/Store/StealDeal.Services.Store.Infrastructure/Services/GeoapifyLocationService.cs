@@ -79,7 +79,9 @@ namespace StealDeal.Services.Store.Infrastructure.Services
                         MainText = mainText,
                         SecondaryText = secondaryText,
                         Commune = props.Suburb ?? props.Quarter,
-                        Province = props.State ?? props.City
+                        Province = props.State ?? props.City,
+                        Latitude = props.Lat ?? (decimal?)f.Geometry?.Coordinates?[1],
+                        Longitude = props.Lon ?? (decimal?)f.Geometry?.Coordinates?[0]
                     };
                 })
                 .ToList();

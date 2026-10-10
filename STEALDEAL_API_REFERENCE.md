@@ -595,6 +595,8 @@ export interface AutocompleteSuggestionResponse {
   secondaryText?: string | null;
   commune?: string | null;
   province?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface PlaceDetailResponse {

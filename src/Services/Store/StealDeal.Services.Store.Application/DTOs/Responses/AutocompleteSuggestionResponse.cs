@@ -8,5 +8,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Responses
         public string? SecondaryText { get; set; }
         public string? Commune { get; set; }
         public string? Province { get; set; }
+        public decimal? Latitude { get; set; }
+        public decimal? Longitude { get; set; }
     }
 }
