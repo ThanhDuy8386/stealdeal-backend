@@ -27,6 +27,57 @@ The existing backend `docker-compose.yml` already builds the six APIs and migrat
 
 ---
 
+## Daily Cost-Effective EC2 Workflow
+
+Use this workflow for normal development and testing. It keeps the EC2 compute cost limited to working hours while preserving the EBS volume, Docker images and SQL Server data.
+
+### Start
+
+1. Start the EC2 instance from the EC2 console.
+2. Wait until both instance status checks pass.
+3. SSH using the Elastic IP.
+4. Start the backend without rebuilding:
+
+```bash
+cd /opt/stealdeal/stealdeal-backend/src/Services
+docker compose up -d
+docker compose ps
+```
+
+5. Start the frontend and Nginx without rebuilding:
+
+```bash
+cd /opt/stealdeal/steal-deals-web
+docker compose up -d
+docker compose ps
+```
+
+6. Open `http://<ELASTIC_IP>/` and check the required API flows.
+
+Do not use `--build` during the normal start workflow. Rebuild only after source or Dockerfile changes.
+
+### Finish
+
+1. Export or upload a database backup if the session produced data that must be retained.
+2. Remove application containers and their accumulated Docker logs while preserving volumes:
+
+```bash
+cd /opt/stealdeal/steal-deals-web
+docker compose down
+
+cd /opt/stealdeal/stealdeal-backend/src/Services
+docker compose down
+```
+
+`docker compose down` does not remove the external `stealdeal-network`, named SQL Server volumes, repository files or the EBS volume.
+
+3. In the EC2 console, choose `Instance state -> Stop instance`.
+4. Confirm the instance state is `stopped`.
+
+Never use `docker compose down -v` unless database destruction is explicitly intended. Never choose `Terminate instance` for the lab instance.
+
+---
+
 ## Phase 0 - Cost Safety
 
 - [ ] Pick one AWS Region for the whole lab.
@@ -185,22 +236,23 @@ Port 443 is added later with domain/HTTPS.
 
 Recommended starting point:
 
-- [ ] Use `t3.medium` (2 vCPU, 4 GiB RAM) for the first light functional lab.
-- [ ] Prefer `t3.large` (2 vCPU, 8 GiB RAM) if all six APIs, Next.js, SQL Server, RabbitMQ and Redis run concurrently and `t3.medium` shows memory pressure/OOM.
+- [x] Use `m7i-flex.large` (2 vCPU, 8 GiB RAM) for the first functional lab. This instance type is selected because it is eligible for the current Free Plan account configuration and provides enough memory for the complete Docker Compose stack.
+- [ ] Consider a larger instance only if all six APIs, Next.js, SQL Server, RabbitMQ and Redis show sustained memory or CPU pressure.
 - [ ] Compare `t3a.medium`/`t3a.large` regional pricing where available.
 - [ ] Do not use `t3.micro` for the complete stack; 1 GiB is impractical with SQL Server and all containers.
-- [ ] Use Amazon Linux 2023 or Ubuntu LTS.
-- [ ] Use a `40 GiB gp3` root EBS volume as the practical starting point.
+- [x] Use Ubuntu 24.04 LTS 64-bit (`x86_64`).
+- [x] Use a `50 GiB gp3` root EBS volume as the practical starting point.
 - [ ] Treat `30 GiB` as a tight minimum; use `50 GiB` if retaining image versions, build cache, logs, backups or larger SQL data.
 - [ ] Monitor `free -h`, `df -h`, Docker disk usage and container memory before downsizing.
 - [ ] Optionally configure small swap for lab resilience; swap is not a substitute for RAM.
 
 Image size is not runtime memory. Docker layers, OS space, writable layers, SQL data, logs, frontend layers and rollback images add overhead. This is why 40 GiB is safer than 20 GiB for this stack. AWS documents the T3 sizes as t3.medium = 2 vCPU/4 GiB and t3.large = 2 vCPU/8 GiB: [T3 instances](https://aws.amazon.com/ec2/instance-types/t3/).
 
-- [ ] Attach the Security Group.
-- [ ] SSH into EC2.
-- [ ] Install Docker and the Docker Compose plugin.
-- [ ] Enable Docker on boot.
+- [x] Attach the dedicated Security Group.
+- [x] Allocate and associate one Elastic IP with the EC2 instance.
+- [x] SSH into EC2.
+- [x] Install Docker and the Docker Compose plugin.
+- [x] Enable Docker on boot.
 - [ ] Create `/opt/stealdeal` and check out both repositories as siblings.
 - [ ] Verify:
 
@@ -215,13 +267,13 @@ docker compose version
 
 ## Phase 5 - Manual Deploy On EC2 (IP Only)
 
-- [ ] Clone both backend and frontend repositories to EC2.
-- [ ] Create the shared Docker network:
+- [x] Clone both backend and frontend repositories to EC2.
+- [x] Create the shared Docker network:
 ```bash
 docker network create stealdeal-network
 ```
-- [ ] Setup production `.env` for backend and frontend (never commit `.env`).
-- [ ] Start Backend stack (microservices, databases, broker):
+- [x] Setup deployment `.env` for backend and frontend (never commit `.env`).
+- [x] Build and start the Backend stack (microservices, databases, broker):
 ```bash
 cd /opt/stealdeal/stealdeal-backend/src/Services
 docker compose up -d --build
@@ -229,16 +281,17 @@ docker compose up -d --build
 docker compose --profile database up database-migrator
 docker compose ps
 ```
-- [ ] Start Frontend & Nginx stack:
+- [ ] Restore development SQL Server data from uploaded `.bak` files when required. The initial schema migration is complete; backup restore remains an optional follow-up and the `.bak` files must remain outside Git.
+- [x] Start Frontend & Nginx stack:
 ```bash
 cd /opt/stealdeal/steal-deals-web
 docker compose up -d --build
 docker compose ps
 docker compose logs -f nginx
 ```
-- [ ] Test `http://<EC2_PUBLIC_IP>/` (Frontend loaded).
-- [ ] Test each required API flow through Nginx at `http://<EC2_PUBLIC_IP>/api/...`.
-- [ ] Check logs and resource usage (`docker stats`, `free -h`).
+- [x] Test `http://<EC2_PUBLIC_IP>/` (Frontend loaded).
+- [x] Test required API flows through Nginx at `http://<EC2_PUBLIC_IP>/api/...`.
+- [x] Check logs and resource usage (`docker stats`, `free -h`, `df -h`).
 - [ ] Reboot EC2 and verify Docker starts and all containers recover on `stealdeal-network`.
 - [ ] Verify SQL Server data persists across restarts.
 
@@ -445,6 +498,31 @@ Storage:
 - [ ] No database, broker, cache or individual API port is publicly reachable.
 - [ ] Domain/HTTPS, ECR, CI/CD and rollback remain later phases.
 
+---
 
+## Future Improvement - Dynamic Docker DNS For Nginx
 
+The current manual deployment flow intentionally keeps the existing Nginx configuration and requires a manual Nginx restart after backend containers are recreated:
 
+```bash
+cd /opt/stealdeal/steal-deals-web
+docker compose restart nginx
+```
+
+This is required because Docker may assign new internal IP addresses when backend containers are recreated, while the current Nginx upstream configuration can retain the previous resolved address.
+
+After the initial manual validation is stable, update `nginx.conf` to use Docker's embedded DNS resolver and periodically re-resolve backend service names:
+
+```nginx
+resolver 127.0.0.11 valid=10s ipv6=off;
+```
+
+Use variable-based `proxy_pass` targets for `frontend`, `identity-api`, `store-api`, `cart-api`, `order-api`, `payment-api` and `notification-api`. Then backend CI/CD can recreate and restart backend containers without manually restarting the frontend/Nginx stack.
+
+Before adopting this improvement:
+
+- [ ] Add Docker DNS resolver configuration to the frontend Nginx config.
+- [ ] Validate all `/api/...` route paths locally.
+- [ ] Recreate a backend container and verify Nginx discovers its new IP without an Nginx restart.
+- [ ] Add backend readiness/health checks so Nginx does not route traffic before a service is ready.
+- [ ] Update the CI/CD deployment workflow to remove the manual Nginx restart step.
