@@ -27,30 +27,30 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          dotnet restore Identity/StealDeal.Services.Identity.slnx
-          dotnet restore Store/StealDeal.Services.Store.slnx
-          dotnet restore Cart/StealDeal.Services.Cart.slnx
-          dotnet restore Order/StealDeal.Services.Order.slnx
-          dotnet restore Payment/StealDeal.Services.Payment.slnx
-          dotnet restore Notification/StealDeal.Services.Notification.slnx
+          dotnet restore src/Services/Identity/StealDeal.Services.Identity.slnx
+          dotnet restore src/Services/Store/StealDeal.Services.Store.slnx
+          dotnet restore src/Services/Cart/StealDeal.Services.Cart.slnx
+          dotnet restore src/Services/Order/StealDeal.Services.Order.slnx
+          dotnet restore src/Services/Payment/StealDeal.Services.Payment.slnx
+          dotnet restore src/Services/Notification/StealDeal.Services.Notification.slnx
 
       - name: Build services
         run: |
-          dotnet build Identity/StealDeal.Services.Identity.slnx --configuration Release --no-restore
-          dotnet build Store/StealDeal.Services.Store.slnx --configuration Release --no-restore
-          dotnet build Cart/StealDeal.Services.Cart.slnx --configuration Release --no-restore
-          dotnet build Order/StealDeal.Services.Order.slnx --configuration Release --no-restore
-          dotnet build Payment/StealDeal.Services.Payment.slnx --configuration Release --no-restore
-          dotnet build Notification/StealDeal.Services.Notification.slnx --configuration Release --no-restore
+          dotnet build src/Services/Identity/StealDeal.Services.Identity.slnx --configuration Release --no-restore
+          dotnet build src/Services/Store/StealDeal.Services.Store.slnx --configuration Release --no-restore
+          dotnet build src/Services/Cart/StealDeal.Services.Cart.slnx --configuration Release --no-restore
+          dotnet build src/Services/Order/StealDeal.Services.Order.slnx --configuration Release --no-restore
+          dotnet build src/Services/Payment/StealDeal.Services.Payment.slnx --configuration Release --no-restore
+          dotnet build src/Services/Notification/StealDeal.Services.Notification.slnx --configuration Release --no-restore
 
       - name: Run tests
         run: |
-          dotnet test Identity/StealDeal.Services.Identity.slnx --configuration Release --no-build
-          dotnet test Store/StealDeal.Services.Store.slnx --configuration Release --no-build
-          dotnet test Cart/StealDeal.Services.Cart.slnx --configuration Release --no-build
-          dotnet test Order/StealDeal.Services.Order.slnx --configuration Release --no-build
-          dotnet test Payment/StealDeal.Services.Payment.slnx --configuration Release --no-build
-          dotnet test Notification/StealDeal.Services.Notification.slnx --configuration Release --no-build
+          dotnet test src/Services/Identity/StealDeal.Services.Identity.slnx --configuration Release --no-build
+          dotnet test src/Services/Store/StealDeal.Services.Store.slnx --configuration Release --no-build
+          dotnet test src/Services/Cart/StealDeal.Services.Cart.slnx --configuration Release --no-build
+          dotnet test src/Services/Order/StealDeal.Services.Order.slnx --configuration Release --no-build
+          dotnet test src/Services/Payment/StealDeal.Services.Payment.slnx --configuration Release --no-build
+          dotnet test src/Services/Notification/StealDeal.Services.Notification.slnx --configuration Release --no-build
 
   docker:
     name: Build Docker images
@@ -62,22 +62,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Identity image
-        run: docker build --provenance=false --sbom=false -f Identity/Dockerfile -t stealdeal/identity:ci-${{ github.sha }} Identity
+        run: docker build --provenance=false --sbom=false -f src/Services/Identity/Dockerfile -t stealdeal/identity:ci-${{ github.sha }} src/Services/Identity
 
       - name: Build Store image
-        run: docker build --provenance=false --sbom=false -f Store/Dockerfile -t stealdeal/store:ci-${{ github.sha }} Store
+        run: docker build --provenance=false --sbom=false -f src/Services/Store/Dockerfile -t stealdeal/store:ci-${{ github.sha }} src/Services/Store
 
       - name: Build Cart image
-        run: docker build --provenance=false --sbom=false -f Cart/Dockerfile -t stealdeal/cart:ci-${{ github.sha }} Cart
+        run: docker build --provenance=false --sbom=false -f src/Services/Cart/Dockerfile -t stealdeal/cart:ci-${{ github.sha }} src/Services/Cart
 
       - name: Build Order image
-        run: docker build --provenance=false --sbom=false -f Order/Dockerfile -t stealdeal/order:ci-${{ github.sha }} Order
+        run: docker build --provenance=false --sbom=false -f src/Services/Order/Dockerfile -t stealdeal/order:ci-${{ github.sha }} src/Services/Order
 
       - name: Build Payment image
-        run: docker build --provenance=false --sbom=false -f Payment/Dockerfile -t stealdeal/payment:ci-${{ github.sha }} Payment
+        run: docker build --provenance=false --sbom=false -f src/Services/Payment/Dockerfile -t stealdeal/payment:ci-${{ github.sha }} src/Services/Payment
 
       - name: Build Notification image
-        run: docker build --provenance=false --sbom=false -f Notification/Dockerfile -t stealdeal/notification:ci-${{ github.sha }} Notification
+        run: docker build --provenance=false --sbom=false -f src/Services/Notification/Dockerfile -t stealdeal/notification:ci-${{ github.sha }} src/Services/Notification
 
       - name: Build database migrator image
-        run: docker build --provenance=false --sbom=false -f database/DatabaseMigrator/Dockerfile -t stealdeal/database-migrator:ci-${{ github.sha }} .
+        run: docker build --provenance=false --sbom=false -f src/Services/database/DatabaseMigrator/Dockerfile -t stealdeal/database-migrator:ci-${{ github.sha }} src/Services
