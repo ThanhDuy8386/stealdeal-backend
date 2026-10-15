@@ -361,32 +361,105 @@ Because frontend and backend have separate lifecycles, maintain dedicated ECR re
 Each repository manages its own automated Continuous Integration workflow without depending on the other.
 
 ### 1. Frontend CI (`steal-deals-web/.github/workflows/ci.yml`)
-- [ ] Trigger on PR and push to `main` / `develop` in `steal-deals-web`.
-- [ ] Setup Node.js 20/22 with cache.
-- [ ] Run `npm ci`.
-- [ ] Run linter: `npm run lint`.
-- [ ] Run tests: `npm run test:run` (Vitest).
-- [ ] Test Docker build: `docker build -t stealdeal-frontend:test .`.
+- [x] Added workflow at repository-root path `.github/workflows/ci.yml`; currently triggers on push to validation branch `duy-dev`.
+- [x] Setup Node.js 20 with cache.
+- [x] Run `npm ci`.
+- [x] Run linter: `npm run lint`.
+- [ ] Run tests: `npm run test:run` (Vitest) — temporarily skipped because `jsdom@30`/`undici@8` requires a newer Node runtime than the current Node 20 CI setup; revisit with Node 24.
+- [x] Run `npm run build` and test the frontend Docker build; CI images are not pushed to ECR in Phase 9.
 
 ### 2. Backend CI (`stealdeal-backend/.github/workflows/ci.yml`)
-- [ ] Trigger on PR and push to `main` / `develop` in `stealdeal-backend`.
-- [ ] Setup .NET SDK.
-- [ ] Run `dotnet restore`, `dotnet build --no-restore`.
-- [ ] Run unit & integration tests: `dotnet test --no-build`.
-- [ ] Test Docker build for changed service Dockerfiles.
+- [x] Added workflow at repository-root path `.github/workflows/ci.yml`; service source remains under `src/Services`.
+- [x] Currently triggers on push to validation branch `duy-dev`.
+- [x] Setup .NET SDK 10.x.
+- [x] Run restore and Release build for all six service solutions.
+- [x] Run `dotnet test --no-build` for all six solutions; dedicated test projects are not present yet.
+- [x] Build Docker images for all six APIs and the database migrator as CI validation; images are not pushed to ECR in Phase 9.
+
+### Phase 9 status
+
+- [x] Backend and frontend CI workflows are implemented and validated on `duy-dev`.
+- [x] CI validates source restore/build, frontend lint/build, and Docker image builds on GitHub-hosted runners.
+- [ ] Frontend Vitest execution and substantive backend test projects remain follow-up work.
+- [ ] ECR push and EC2 deployment remain Phase 10/11 work; Phase 9 does not publish images.
 
 ---
 
-## Phase 10 - GitHub Actions To AWS With OIDC
+## Phase 10 - GitHub Actions To AWS With IAM User Access Keys
 
-Secure authentication to AWS without long-lived credentials (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`).
+Use a dedicated IAM user with a restricted access key for the lab. This is simpler than OIDC for the current validation phase, but access keys are long-lived credentials and must be treated as sensitive secrets. Do not reuse a personal administrator key and do not use this approach as the long-term production authentication model.
 
-- [ ] Create GitHub OIDC Provider in AWS IAM (issuer: `https://token.actions.githubusercontent.com`).
-- [ ] Create single deployment IAM Role (e.g. `github-actions-stealdeal-deploy`).
-- [ ] Configure trust policy to permit both repositories:
-  - `StringLike: { "token.actions.githubusercontent.com:sub": ["repo:TaiPhat25/steal-deals-web:*", "repo:<backend-owner>/stealdeal-backend:*"] }`
-- [ ] Grant necessary permissions: ECR image push/pull, AWS Systems Manager (SSM) or EC2 SSH command execution.
-- [ ] Test `aws-actions/configure-aws-credentials` action in both repositories.
+Selected AWS Region for this lab: `us-east-1`.
+
+### IAM User And Access Key
+
+- [ ] Create a dedicated IAM user, for example `github-actions-stealdeal-lab`.
+- [ ] Do not enable AWS Console access for this user.
+- [ ] Create one access key for `Third-party service` / CI/CD use.
+- [ ] Save the access key ID and secret access key only in GitHub encrypted secrets; never commit them to either repository.
+- [ ] Do not create more than one active key unless performing a rotation.
+- [ ] Record the key creation date and set a rotation reminder, preferably every 60-90 days.
+- [ ] Delete the old key after rotation and after all workflows have been verified.
+
+### Least-Privilege IAM Policy
+
+- [ ] Grant ECR login permission: `ecr:GetAuthorizationToken`.
+- [ ] Grant ECR push/pull permissions only for the StealDeal repositories:
+  - `stealdeal-frontend`
+  - `stealdeal-identity`
+  - `stealdeal-store`
+  - `stealdeal-cart`
+  - `stealdeal-order`
+  - `stealdeal-payment`
+  - `stealdeal-notification`
+  - `stealdeal-database-migrator`
+- [ ] Grant only the required EC2/SSM permissions for the selected deployment method.
+- [ ] Do not attach `AdministratorAccess`, `PowerUserAccess`, or unrestricted `AmazonEC2FullAccess`.
+- [ ] Prefer AWS Systems Manager (SSM) for EC2 commands; avoid storing an EC2 private SSH key in GitHub.
+- [ ] Add ECR lifecycle policies and retain only the required number of images.
+
+### GitHub Repository Secrets
+
+Configure the following encrypted secrets in both repositories under `Settings -> Secrets and variables -> Actions`:
+
+- [ ] `AWS_ACCESS_KEY_ID`
+- [ ] `AWS_SECRET_ACCESS_KEY`
+- [ ] `AWS_ACCOUNT_ID`
+- [ ] `AWS_REGION` = `us-east-1`
+- [ ] `AWS_EC2_INSTANCE_ID` (needed when SSM deployment is enabled in Phase 11)
+
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` must be GitHub Secrets, not Repository Variables. The account ID, region and instance ID may be variables, but keeping them consistent as secrets is acceptable for this lab.
+
+### Workflow Authentication Test
+
+- [ ] Add `aws-actions/configure-aws-credentials` to both repositories using the IAM user secrets:
+
+  ```yaml
+  - name: Configure AWS credentials
+    uses: aws-actions/configure-aws-credentials@v6
+    with:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.AWS_REGION }}
+  ```
+
+- [ ] Verify identity with `aws sts get-caller-identity`.
+- [ ] Verify that the workflow can describe the required ECR repositories.
+- [ ] Verify that it cannot access unrelated AWS services or resources.
+- [ ] Run the test only from the intended validation branch before enabling deployment from `main`.
+- [ ] Enable GitHub environment protection and required reviewers before using the credentials for production-like deployment.
+
+### Access Key Rotation Procedure
+
+1. Create a second access key for the same dedicated IAM user.
+2. Update both repositories' GitHub Secrets.
+3. Run the frontend and backend authentication workflows.
+4. Confirm both workflows use the new key successfully.
+5. Deactivate the old key.
+6. Monitor for failures for the agreed validation window.
+7. Delete the old key.
+
+The IAM user/access-key approach is intentionally a lab simplification. Revisit OIDC before production because it removes long-lived AWS credentials from GitHub entirely.
 
 ---
 
@@ -396,11 +469,11 @@ Each repository can be deployed independently to EC2 without touching or disrupt
 
 ### 1. Frontend CD Workflow (`steal-deals-web/.github/workflows/cd.yml`)
 - [ ] Trigger on push/merge to `main`.
-- [ ] Assume AWS Role via OIDC.
+- [ ] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
 - [ ] Build & tag frontend Docker image with commit SHA:
   ```bash
-  docker build -t <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/stealdeal-frontend:${{ github.sha }} .
-  docker push <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/stealdeal-frontend:${{ github.sha }}
+  docker build -t <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/stealdeal-frontend:${{ github.sha }} .
+  docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/stealdeal-frontend:${{ github.sha }}
   ```
 - [ ] Deploy to EC2 (via SSH or AWS SSM):
   ```bash
@@ -414,7 +487,7 @@ Each repository can be deployed independently to EC2 without touching or disrupt
 
 ### 2. Backend CD Workflow (`stealdeal-backend/.github/workflows/cd.yml`)
 - [ ] Trigger on push/merge to `main`.
-- [ ] Assume AWS Role via OIDC.
+- [ ] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
 - [ ] Build and push updated microservice images to respective ECR repositories.
 - [ ] Deploy to EC2:
   ```bash
