@@ -40,10 +40,10 @@ jobs:
               stealdeal-notification \
               stealdeal-database-migrator
 
-      - name: Verify EC2 instance
+      - name: Verify EC2 is managed by SSM
         run: |
-          aws ec2 describe-instances \
+          aws ssm describe-instance-information \
             --region us-east-1 \
-            --instance-ids i-012543d83b62f9bff \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text
+            --filters Key=InstanceIds,Values=i-012543d83b62f9bff \
+            --query "InstanceInformationList[].{Id:InstanceId,Status:PingStatus,Agent:AgentVersion}" \
+            --output table
