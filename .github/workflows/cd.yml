@@ -1,0 +1,204 @@
+name: Backend CD
+
+on:
+  workflow_run:
+    workflows:
+      - Backend CI
+    types:
+      - completed
+    branches:
+      - duy-dev
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Commit SHA whose image should be deployed
+        required: true
+        type: string
+      services:
+        description: Comma-separated services, or all
+        required: true
+        default: all
+        type: string
+      run_migrator:
+        description: Run the migrator before deploying APIs
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: backend-ec2-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_EC2_INSTANCE_ID: ${{ secrets.AWS_EC2_INSTANCE_ID }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  DEPLOY_PATH: /opt/stealdeal/stealdeal-backend/src/Services
+  FRONTEND_PATH: /opt/stealdeal/steal-deals-web
+
+jobs:
+  deploy:
+    name: Deploy changed backend services
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download deployment manifest
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-deployment-${{ github.event.workflow_run.head_sha }}
+          path: .deploy
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Create manual deployment manifest
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SERVICES: ${{ inputs.services }}
+          RUN_MIGRATOR: ${{ inputs.run_migrator }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$SERVICES" == "all" ]]; then
+            api_services='["identity","notification","store","cart","order","payment"]'
+          else
+            api_services=$(printf '%s' "$SERVICES" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+          fi
+
+          mkdir -p .deploy
+          jq -n \
+            --arg sha "${{ inputs.image_sha }}" \
+            --argjson api_services "$api_services" \
+            --argjson run_migrator "$RUN_MIGRATOR" \
+            '{
+              commit_sha: $sha,
+              api_services: $api_services,
+              docker_services: $api_services,
+              run_migrator: $run_migrator
+            }' > .deploy/deployment-manifest.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Deploy through SSM
+        env:
+          IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.image_sha || github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          identity_image="$ECR_REGISTRY/stealdeal-identity:$IMAGE_TAG"
+          notification_image="$ECR_REGISTRY/stealdeal-notification:$IMAGE_TAG"
+          store_image="$ECR_REGISTRY/stealdeal-store:$IMAGE_TAG"
+          cart_image="$ECR_REGISTRY/stealdeal-cart:$IMAGE_TAG"
+          order_image="$ECR_REGISTRY/stealdeal-order:$IMAGE_TAG"
+          payment_image="$ECR_REGISTRY/stealdeal-payment:$IMAGE_TAG"
+          migrator_image="$ECR_REGISTRY/stealdeal-database-migrator:$IMAGE_TAG"
+
+          api_services=$(jq -c '.api_services' .deploy/deployment-manifest.json)
+          run_migrator=$(jq -r '.run_migrator' .deploy/deployment-manifest.json)
+
+          commands=$(jq -cn \
+            --arg path "$DEPLOY_PATH" \
+            --arg frontend_path "$FRONTEND_PATH" \
+            --arg region "$AWS_REGION" \
+            --arg registry "$ECR_REGISTRY" \
+            --arg identity "$identity_image" \
+            --arg notification "$notification_image" \
+            --arg store "$store_image" \
+            --arg cart "$cart_image" \
+            --arg order "$order_image" \
+            --arg payment "$payment_image" \
+            --arg migrator "$migrator_image" \
+            --argjson api_services "$api_services" \
+            --argjson run_migrator "$run_migrator" \
+            '
+              def has($service): (($api_services | index($service)) != null);
+              def targets: [
+                (if has("identity") then "identity-api" else empty end),
+                (if has("notification") then "notification-api" else empty end),
+                (if has("store") then "store-api" else empty end),
+                (if has("cart") then "cart-api" else empty end),
+                (if has("order") then "order-api" else empty end),
+                (if has("payment") then "payment-api" else empty end)
+              ];
+              def has_targets: (targets | length) > 0;
+              {
+                commands:
+                  [
+                    "set -e",
+                    ("cd " + $path)
+                  ]
+                  + (if has("identity") then ["export IDENTITY_IMAGE=" + $identity] else [] end)
+                  + (if has("notification") then ["export NOTIFICATION_IMAGE=" + $notification] else [] end)
+                  + (if has("store") then ["export STORE_IMAGE=" + $store] else [] end)
+                  + (if has("cart") then ["export CART_IMAGE=" + $cart] else [] end)
+                  + (if has("order") then ["export ORDER_IMAGE=" + $order] else [] end)
+                  + (if has("payment") then ["export PAYMENT_IMAGE=" + $payment] else [] end)
+                  + (if $run_migrator then ["export DATABASE_MIGRATOR_IMAGE=" + $migrator] else [] end)
+                  + (if ($run_migrator or has_targets) then [
+                      ("aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry)
+                    ] else ["echo No backend deployment required"] end)
+                  + (if $run_migrator then [
+                      "docker compose --profile database pull database-migrator",
+                      "docker compose up -d sqlserver rabbitmq redis",
+                      "docker compose --profile database up --abort-on-container-exit --exit-code-from database-migrator database-migrator"
+                    ] else [] end)
+                  + (if has_targets then [
+                      ("docker compose pull " + (targets | join(" "))),
+                      ("docker compose up -d --no-deps --force-recreate " + (targets | join(" "))),
+                      "docker compose ps --status running"
+                    ] else [] end)
+                  + (if has("identity") then ["docker compose ps --status running --services | grep -qx identity-api"] else [] end)
+                  + (if has("notification") then ["docker compose ps --status running --services | grep -qx notification-api"] else [] end)
+                  + (if has("store") then ["docker compose ps --status running --services | grep -qx store-api"] else [] end)
+                  + (if has("cart") then ["docker compose ps --status running --services | grep -qx cart-api"] else [] end)
+                  + (if has("order") then ["docker compose ps --status running --services | grep -qx order-api"] else [] end)
+                  + (if has("payment") then ["docker compose ps --status running --services | grep -qx payment-api"] else [] end)
+                  + (if has_targets then [
+                      ("cd " + $frontend_path),
+                      "docker compose restart nginx",
+                      "curl --fail --silent --show-error --retry 12 --retry-delay 5 http://localhost:80/"
+                    ] else [] end)
+              }
+            ')
+
+          command_id=$(aws ssm send-command \
+            --instance-ids "$AWS_EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy backend $IMAGE_TAG" \
+            --parameters "$commands" \
+            --query Command.CommandId \
+            --output text)
+
+          wait_status=0
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "$AWS_EC2_INSTANCE_ID" || wait_status=$?
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$AWS_EC2_INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json
+
+          status=$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$AWS_EC2_INSTANCE_ID" \
+            --query Status \
+            --output text)
+
+          echo "SSM waiter exit code: $wait_status"
+          echo "SSM command status: $status"
+          test "$status" = Success

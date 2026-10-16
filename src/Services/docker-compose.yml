@@ -3,6 +3,7 @@
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
     ports:
       - "1433:1433"
     environment:
@@ -14,6 +15,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -25,6 +27,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -39,6 +42,7 @@ services:
     build:
       context: .
       dockerfile: database/DatabaseMigrator/Dockerfile
+    image: ${DATABASE_MIGRATOR_IMAGE:-stealdeal-database-migrator:local}
     environment:
       MSSQL_HOST: sqlserver
       MSSQL_PORT: 1433
@@ -49,6 +53,8 @@ services:
 
   identity-api:
     build: ./Identity
+    image: ${IDENTITY_IMAGE:-stealdeal-identity:local}
+    restart: unless-stopped
     ports:
       - "5158:5158"
     environment:
@@ -67,6 +73,8 @@ services:
 
   notification-api:
     build: ./Notification
+    image: ${NOTIFICATION_IMAGE:-stealdeal-notification:local}
+    restart: unless-stopped
     ports:
       - "5053:5053"
     environment:
@@ -85,6 +93,8 @@ services:
 
   store-api:
     build: ./Store
+    image: ${STORE_IMAGE:-stealdeal-store:local}
+    restart: unless-stopped
     ports:
       - "5169:5169"
     environment:
@@ -104,6 +114,8 @@ services:
 
   cart-api:
     build: ./Cart
+    image: ${CART_IMAGE:-stealdeal-cart:local}
+    restart: unless-stopped
     ports:
       - "5185:5185"
     environment:
@@ -119,6 +131,8 @@ services:
 
   order-api:
     build: ./Order
+    image: ${ORDER_IMAGE:-stealdeal-order:local}
+    restart: unless-stopped
     ports:
       - "5165:5165"
     environment:
@@ -143,6 +157,8 @@ services:
 
   payment-api:
     build: ./Payment
+    image: ${PAYMENT_IMAGE:-stealdeal-payment:local}
+    restart: unless-stopped
     ports:
       - "5155:5155"
     environment:
