@@ -647,6 +647,7 @@ EC2 does not need the frontend source code or the GitHub workflow files for CD. 
 - [x] Backend CI detects changed service paths on `duy-dev`; Backend CD listens for a successful `workflow_run`. The CD workflow file must exist on the default branch `main`, matching the frontend workflow pattern.
 - [x] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
 - [x] Build and push only changed microservice images to their respective ECR repositories using the commit SHA tag.
+- [x] Support a manual `full_build` CI dispatch for the initial ECR bootstrap, publishing all six API images and the database migrator.
 - [x] Build and run `database-migrator` only when the migrator or related service infrastructure/migration paths change.
 - [x] Deploy only changed API containers to EC2 through SSM:
   ```bash
@@ -657,6 +658,7 @@ EC2 does not need the frontend source code or the GitHub workflow files for CD. 
   ```
 - [ ] Add dedicated health endpoints for all six APIs and use them in CD. Current CD verifies changed containers are running and checks the frontend through Nginx.
 - [x] Unchanged API, database, broker, cache and frontend containers are not recreated. Nginx is restarted after an API deployment because the current Nginx configuration caches Docker service IPs.
+- [x] Persist deployed ECR image URIs in the EC2 backend `.env` so restarts and normal `docker compose up -d` use ECR images instead of the local-image fallback.
 
 ### 3. Rollback Strategy
 - [x] Keep immutable commit SHA image tags in ECR and GitHub Actions run history.

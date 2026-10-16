@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - duy-dev
+  workflow_dispatch:
+    inputs:
+      full_build:
+        description: Build and publish every backend image for the initial ECR bootstrap
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -75,8 +82,24 @@ jobs:
           ORDER_MIGRATOR_CHANGED: ${{ steps.filter.outputs.order_migrator }}
           PAYMENT_MIGRATOR_CHANGED: ${{ steps.filter.outputs.payment_migrator }}
           DATABASE_MIGRATOR_CHANGED: ${{ steps.filter.outputs.database_migrator }}
+          FULL_BUILD: ${{ inputs.full_build == true }}
         run: |
           set -euo pipefail
+
+          if [[ "$FULL_BUILD" == "true" ]]; then
+            IDENTITY_CHANGED=true
+            NOTIFICATION_CHANGED=true
+            STORE_CHANGED=true
+            CART_CHANGED=true
+            ORDER_CHANGED=true
+            PAYMENT_CHANGED=true
+            IDENTITY_MIGRATOR_CHANGED=true
+            NOTIFICATION_MIGRATOR_CHANGED=true
+            STORE_MIGRATOR_CHANGED=true
+            ORDER_MIGRATOR_CHANGED=true
+            PAYMENT_MIGRATOR_CHANGED=true
+            DATABASE_MIGRATOR_CHANGED=true
+          fi
 
           api_matrix=$(jq -cn \
             --arg identity "$IDENTITY_CHANGED" \

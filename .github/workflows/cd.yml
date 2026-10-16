@@ -147,6 +147,35 @@ jobs:
                   + (if has("order") then ["export ORDER_IMAGE=" + $order] else [] end)
                   + (if has("payment") then ["export PAYMENT_IMAGE=" + $payment] else [] end)
                   + (if $run_migrator then ["export DATABASE_MIGRATOR_IMAGE=" + $migrator] else [] end)
+                  + (if ($run_migrator or has_targets) then ["touch .env"] else [] end)
+                  + (if has("identity") then [
+                      "sed -i '/^IDENTITY_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'IDENTITY_IMAGE=" + $identity + "' >> .env")
+                    ] else [] end)
+                  + (if has("notification") then [
+                      "sed -i '/^NOTIFICATION_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'NOTIFICATION_IMAGE=" + $notification + "' >> .env")
+                    ] else [] end)
+                  + (if has("store") then [
+                      "sed -i '/^STORE_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'STORE_IMAGE=" + $store + "' >> .env")
+                    ] else [] end)
+                  + (if has("cart") then [
+                      "sed -i '/^CART_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'CART_IMAGE=" + $cart + "' >> .env")
+                    ] else [] end)
+                  + (if has("order") then [
+                      "sed -i '/^ORDER_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'ORDER_IMAGE=" + $order + "' >> .env")
+                    ] else [] end)
+                  + (if has("payment") then [
+                      "sed -i '/^PAYMENT_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'PAYMENT_IMAGE=" + $payment + "' >> .env")
+                    ] else [] end)
+                  + (if $run_migrator then [
+                      "sed -i '/^DATABASE_MIGRATOR_IMAGE=/d' .env",
+                      ("printf '%s\\n' 'DATABASE_MIGRATOR_IMAGE=" + $migrator + "' >> .env")
+                    ] else [] end)
                   + (if ($run_migrator or has_targets) then [
                       ("aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry)
                     ] else ["echo No backend deployment required"] end)
