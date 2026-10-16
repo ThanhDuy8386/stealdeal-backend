@@ -659,6 +659,7 @@ EC2 does not need the frontend source code or the GitHub workflow files for CD. 
 - [ ] Add dedicated health endpoints for all six APIs and use them in CD. Current CD verifies changed containers are running and checks the frontend through Nginx.
 - [x] Unchanged API, database, broker, cache and frontend containers are not recreated. Nginx is restarted after an API deployment because the current Nginx configuration caches Docker service IPs.
 - [x] Persist deployed ECR image URIs in the EC2 backend `.env` so restarts and normal `docker compose up -d` use ECR images instead of the local-image fallback.
+- [ ] The EC2 host has the updated backend `docker-compose.yml` containing the ECR/local image variables. Synchronize this file once before the first backend CD run; backend CD now fails fast instead of silently building from stale source when it is missing.
 
 ### 3. Rollback Strategy
 - [x] Keep immutable commit SHA image tags in ECR and GitHub Actions run history.

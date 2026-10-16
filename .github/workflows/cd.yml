@@ -180,13 +180,20 @@ jobs:
                       ("aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry)
                     ] else ["echo No backend deployment required"] end)
                   + (if $run_migrator then [
+                      ("docker compose --profile database config --images | grep -Fqx " + $migrator),
                       "docker compose --profile database pull database-migrator",
                       "docker compose up -d sqlserver rabbitmq redis",
-                      "docker compose --profile database up --abort-on-container-exit --exit-code-from database-migrator database-migrator"
+                      "docker compose --profile database up --no-build --abort-on-container-exit --exit-code-from database-migrator database-migrator"
                     ] else [] end)
                   + (if has_targets then [
+                      (if has("identity") then ("docker compose config --images | grep -Fqx " + $identity) else empty end),
+                      (if has("notification") then ("docker compose config --images | grep -Fqx " + $notification) else empty end),
+                      (if has("store") then ("docker compose config --images | grep -Fqx " + $store) else empty end),
+                      (if has("cart") then ("docker compose config --images | grep -Fqx " + $cart) else empty end),
+                      (if has("order") then ("docker compose config --images | grep -Fqx " + $order) else empty end),
+                      (if has("payment") then ("docker compose config --images | grep -Fqx " + $payment) else empty end),
                       ("docker compose pull " + (targets | join(" "))),
-                      ("docker compose up -d --no-deps --force-recreate " + (targets | join(" "))),
+                      ("docker compose up -d --no-build --no-deps --force-recreate " + (targets | join(" "))),
                       "docker compose ps --status running"
                     ] else [] end)
                   + (if has("identity") then ["docker compose ps --status running --services | grep -qx identity-api"] else [] end)
@@ -198,7 +205,8 @@ jobs:
                   + (if has_targets then [
                       ("cd " + $frontend_path),
                       "docker compose restart nginx",
-                      "curl --fail --silent --show-error --retry 12 --retry-delay 5 http://localhost:80/"
+                      "sleep 5",
+                      "curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors http://localhost:80/"
                     ] else [] end)
                 )
               }
