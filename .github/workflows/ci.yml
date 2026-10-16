@@ -278,7 +278,25 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Check immutable image tag
+        id: image_check
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REPOSITORY: ${{ matrix.service.repository }}
+        run: |
+          if aws ecr describe-images \
+            --repository-name "$REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image already exists: $REPOSITORY:$IMAGE_TAG"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image does not exist yet: $REPOSITORY:$IMAGE_TAG"
+          fi
+
       - name: Build Docker image
+        if: steps.image_check.outputs.exists != 'true'
         env:
           IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ matrix.service.repository }}:${{ github.sha }}
         run: |
@@ -290,6 +308,7 @@ jobs:
             "${{ matrix.service.context }}"
 
       - name: Push Docker image
+        if: steps.image_check.outputs.exists != 'true'
         env:
           IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ matrix.service.repository }}:${{ github.sha }}
         run: docker push "$IMAGE_URI"
