@@ -1,0 +1,272 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - duy-dev
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      api_matrix: ${{ steps.matrix.outputs.api_matrix }}
+      docker_matrix: ${{ steps.matrix.outputs.docker_matrix }}
+      api_services: ${{ steps.matrix.outputs.api_services }}
+      docker_services: ${{ steps.matrix.outputs.docker_services }}
+      has_api: ${{ steps.matrix.outputs.has_api }}
+      has_docker: ${{ steps.matrix.outputs.has_docker }}
+      run_migrator: ${{ steps.matrix.outputs.run_migrator }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            identity:
+              - 'src/Services/Identity/**'
+            notification:
+              - 'src/Services/Notification/**'
+            store:
+              - 'src/Services/Store/**'
+            cart:
+              - 'src/Services/Cart/**'
+            order:
+              - 'src/Services/Order/**'
+            payment:
+              - 'src/Services/Payment/**'
+            identity_migrator:
+              - 'src/Services/Identity/**/Migrations/**'
+              - 'src/Services/Identity/**/Infrastructure/**'
+            notification_migrator:
+              - 'src/Services/Notification/**/Migrations/**'
+              - 'src/Services/Notification/**/Infrastructure/**'
+            store_migrator:
+              - 'src/Services/Store/**/Migrations/**'
+              - 'src/Services/Store/**/Infrastructure/**'
+            order_migrator:
+              - 'src/Services/Order/**/Migrations/**'
+              - 'src/Services/Order/**/Infrastructure/**'
+            payment_migrator:
+              - 'src/Services/Payment/**/Migrations/**'
+              - 'src/Services/Payment/**/Infrastructure/**'
+            database_migrator:
+              - 'src/Services/database/DatabaseMigrator/**'
+
+      - name: Build service matrices
+        id: matrix
+        env:
+          IDENTITY_CHANGED: ${{ steps.filter.outputs.identity }}
+          NOTIFICATION_CHANGED: ${{ steps.filter.outputs.notification }}
+          STORE_CHANGED: ${{ steps.filter.outputs.store }}
+          CART_CHANGED: ${{ steps.filter.outputs.cart }}
+          ORDER_CHANGED: ${{ steps.filter.outputs.order }}
+          PAYMENT_CHANGED: ${{ steps.filter.outputs.payment }}
+          IDENTITY_MIGRATOR_CHANGED: ${{ steps.filter.outputs.identity_migrator }}
+          NOTIFICATION_MIGRATOR_CHANGED: ${{ steps.filter.outputs.notification_migrator }}
+          STORE_MIGRATOR_CHANGED: ${{ steps.filter.outputs.store_migrator }}
+          ORDER_MIGRATOR_CHANGED: ${{ steps.filter.outputs.order_migrator }}
+          PAYMENT_MIGRATOR_CHANGED: ${{ steps.filter.outputs.payment_migrator }}
+          DATABASE_MIGRATOR_CHANGED: ${{ steps.filter.outputs.database_migrator }}
+        run: |
+          set -euo pipefail
+
+          api_matrix=$(jq -cn \
+            --arg identity "$IDENTITY_CHANGED" \
+            --arg notification "$NOTIFICATION_CHANGED" \
+            --arg store "$STORE_CHANGED" \
+            --arg cart "$CART_CHANGED" \
+            --arg order "$ORDER_CHANGED" \
+            --arg payment "$PAYMENT_CHANGED" \
+            '[
+              (if $identity == "true" then {
+                name: "identity",
+                solution: "src/Services/Identity/StealDeal.Services.Identity.slnx",
+                dockerfile: "src/Services/Identity/Dockerfile",
+                context: "src/Services/Identity",
+                repository: "stealdeal-identity",
+                compose_service: "identity-api",
+                image_env: "IDENTITY_IMAGE"
+              } else empty end),
+              (if $notification == "true" then {
+                name: "notification",
+                solution: "src/Services/Notification/StealDeal.Services.Notification.slnx",
+                dockerfile: "src/Services/Notification/Dockerfile",
+                context: "src/Services/Notification",
+                repository: "stealdeal-notification",
+                compose_service: "notification-api",
+                image_env: "NOTIFICATION_IMAGE"
+              } else empty end),
+              (if $store == "true" then {
+                name: "store",
+                solution: "src/Services/Store/StealDeal.Services.Store.slnx",
+                dockerfile: "src/Services/Store/Dockerfile",
+                context: "src/Services/Store",
+                repository: "stealdeal-store",
+                compose_service: "store-api",
+                image_env: "STORE_IMAGE"
+              } else empty end),
+              (if $cart == "true" then {
+                name: "cart",
+                solution: "src/Services/Cart/StealDeal.Services.Cart.slnx",
+                dockerfile: "src/Services/Cart/Dockerfile",
+                context: "src/Services/Cart",
+                repository: "stealdeal-cart",
+                compose_service: "cart-api",
+                image_env: "CART_IMAGE"
+              } else empty end),
+              (if $order == "true" then {
+                name: "order",
+                solution: "src/Services/Order/StealDeal.Services.Order.slnx",
+                dockerfile: "src/Services/Order/Dockerfile",
+                context: "src/Services/Order",
+                repository: "stealdeal-order",
+                compose_service: "order-api",
+                image_env: "ORDER_IMAGE"
+              } else empty end),
+              (if $payment == "true" then {
+                name: "payment",
+                solution: "src/Services/Payment/StealDeal.Services.Payment.slnx",
+                dockerfile: "src/Services/Payment/Dockerfile",
+                context: "src/Services/Payment",
+                repository: "stealdeal-payment",
+                compose_service: "payment-api",
+                image_env: "PAYMENT_IMAGE"
+              } else empty end)
+            ]')
+
+          migrator_changed=false
+          if [[ "$IDENTITY_MIGRATOR_CHANGED" == "true" || \
+                "$NOTIFICATION_MIGRATOR_CHANGED" == "true" || \
+                "$STORE_MIGRATOR_CHANGED" == "true" || \
+                "$ORDER_MIGRATOR_CHANGED" == "true" || \
+                "$PAYMENT_MIGRATOR_CHANGED" == "true" || \
+                "$DATABASE_MIGRATOR_CHANGED" == "true" ]]; then
+            migrator_changed=true
+          fi
+
+          docker_matrix=$(jq -cn \
+            --argjson apis "$api_matrix" \
+            --arg migrator "$migrator_changed" \
+            '$apis + (if $migrator == "true" then [{
+              name: "database-migrator",
+              solution: "",
+              dockerfile: "src/Services/database/DatabaseMigrator/Dockerfile",
+              context: "src/Services",
+              repository: "stealdeal-database-migrator",
+              compose_service: "database-migrator",
+              image_env: "DATABASE_MIGRATOR_IMAGE"
+            }] else [] end)')
+
+          api_services=$(jq -c '[.[] | .name]' <<< "$api_matrix")
+          docker_services=$(jq -c '[.[] | .name]' <<< "$docker_matrix")
+          has_api=$(jq -r 'length > 0' <<< "$api_matrix")
+          has_docker=$(jq -r 'length > 0' <<< "$docker_matrix")
+
+          jq -n \
+            --arg sha "$GITHUB_SHA" \
+            --argjson api_services "$api_services" \
+            --argjson docker_services "$docker_services" \
+            --argjson run_migrator "$migrator_changed" \
+            '{
+              commit_sha: $sha,
+              api_services: $api_services,
+              docker_services: $docker_services,
+              run_migrator: $run_migrator
+            }' > deployment-manifest.json
+
+          echo "api_matrix=$api_matrix" >> "$GITHUB_OUTPUT"
+          echo "docker_matrix=$docker_matrix" >> "$GITHUB_OUTPUT"
+          echo "api_services=$api_services" >> "$GITHUB_OUTPUT"
+          echo "docker_services=$docker_services" >> "$GITHUB_OUTPUT"
+          echo "has_api=$has_api" >> "$GITHUB_OUTPUT"
+          echo "has_docker=$has_docker" >> "$GITHUB_OUTPUT"
+          echo "run_migrator=$migrator_changed" >> "$GITHUB_OUTPUT"
+
+      - name: Upload deployment manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-deployment-${{ github.sha }}
+          path: deployment-manifest.json
+          retention-days: 7
+
+  dotnet:
+    name: Build and test changed .NET services
+    needs: detect
+    if: needs.detect.outputs.has_api == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.detect.outputs.api_matrix) }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore service
+        run: dotnet restore "${{ matrix.service.solution }}"
+
+      - name: Build service
+        run: dotnet build "${{ matrix.service.solution }}" --configuration Release --no-restore
+
+      - name: Run service tests
+        run: dotnet test "${{ matrix.service.solution }}" --configuration Release --no-build
+
+  docker:
+    name: Build and push changed Docker images
+    needs:
+      - detect
+      - dotnet
+    if: >-
+      always() &&
+      needs.detect.outputs.has_docker == 'true' &&
+      (needs.dotnet.result == 'success' || needs.dotnet.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.detect.outputs.docker_matrix) }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        env:
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ matrix.service.repository }}:${{ github.sha }}
+        run: |
+          docker build \
+            --provenance=false \
+            --sbom=false \
+            -f "${{ matrix.service.dockerfile }}" \
+            -t "$IMAGE_URI" \
+            "${{ matrix.service.context }}"
+
+      - name: Push Docker image
+        env:
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ matrix.service.repository }}:${{ github.sha }}
+        run: docker push "$IMAGE_URI"

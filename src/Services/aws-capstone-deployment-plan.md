@@ -361,32 +361,225 @@ Because frontend and backend have separate lifecycles, maintain dedicated ECR re
 Each repository manages its own automated Continuous Integration workflow without depending on the other.
 
 ### 1. Frontend CI (`steal-deals-web/.github/workflows/ci.yml`)
-- [ ] Trigger on PR and push to `main` / `develop` in `steal-deals-web`.
-- [ ] Setup Node.js 20/22 with cache.
-- [ ] Run `npm ci`.
-- [ ] Run linter: `npm run lint`.
-- [ ] Run tests: `npm run test:run` (Vitest).
-- [ ] Test Docker build: `docker build -t stealdeal-frontend:test .`.
+- [x] Added workflow at repository-root path `.github/workflows/ci.yml`; currently triggers on push to validation branch `duy-dev`.
+- [x] Setup Node.js 20 with cache.
+- [x] Run `npm ci`.
+- [x] Run linter: `npm run lint`.
+- [ ] Run tests: `npm run test:run` (Vitest) — temporarily skipped because `jsdom@30`/`undici@8` requires a newer Node runtime than the current Node 20 CI setup; revisit with Node 24.
+- [x] Run `npm run build` and test the frontend Docker build; CI images are not pushed to ECR in Phase 9.
 
 ### 2. Backend CI (`stealdeal-backend/.github/workflows/ci.yml`)
-- [ ] Trigger on PR and push to `main` / `develop` in `stealdeal-backend`.
-- [ ] Setup .NET SDK.
-- [ ] Run `dotnet restore`, `dotnet build --no-restore`.
-- [ ] Run unit & integration tests: `dotnet test --no-build`.
-- [ ] Test Docker build for changed service Dockerfiles.
+- [x] Added workflow at repository-root path `.github/workflows/ci.yml`; service source remains under `src/Services`.
+- [x] Currently triggers on push to validation branch `duy-dev`.
+- [x] Setup .NET SDK 10.x.
+- [x] Run restore and Release build for all six service solutions.
+- [x] Run `dotnet test --no-build` for all six solutions; dedicated test projects are not present yet.
+- [x] Build Docker images for all six APIs and the database migrator as CI validation; images are not pushed to ECR in Phase 9.
+
+### Phase 9 status
+
+- [x] Backend and frontend CI workflows are implemented and validated on `duy-dev`.
+- [x] CI validates source restore/build, frontend lint/build, and Docker image builds on GitHub-hosted runners.
+- [ ] Frontend Vitest execution and substantive backend test projects remain follow-up work.
+- [ ] ECR push and EC2 deployment remain Phase 10/11 work; Phase 9 does not publish images.
 
 ---
 
-## Phase 10 - GitHub Actions To AWS With OIDC
+## Phase 10 - GitHub Actions To AWS With IAM User Access Keys
 
-Secure authentication to AWS without long-lived credentials (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`).
+Phase 10 is complete for the current lab. It establishes authentication from GitHub Actions to AWS and a secure command channel from GitHub Actions to EC2. It does not build/push production images or deploy the application; those actions belong to Phase 11.
 
-- [ ] Create GitHub OIDC Provider in AWS IAM (issuer: `https://token.actions.githubusercontent.com`).
-- [ ] Create single deployment IAM Role (e.g. `github-actions-stealdeal-deploy`).
-- [ ] Configure trust policy to permit both repositories:
-  - `StringLike: { "token.actions.githubusercontent.com:sub": ["repo:TaiPhat25/steal-deals-web:*", "repo:<backend-owner>/stealdeal-backend:*"] }`
-- [ ] Grant necessary permissions: ECR image push/pull, AWS Systems Manager (SSM) or EC2 SSH command execution.
-- [ ] Test `aws-actions/configure-aws-credentials` action in both repositories.
+### AWS Lab Context
+
+```text
+AWS Account ID:   735394850167
+AWS Region:       us-east-1
+EC2 Instance ID:  i-012543d83b62f9bff
+```
+
+The AWS region/account values in this section apply only to this deployment plan. Application `appsettings.json` files belonging to another AWS account remain unchanged.
+
+### A. GitHub Actions IAM User
+
+Completed configuration:
+
+- [x] Created dedicated IAM user: `github-actions-stealdeal-lab`.
+- [x] User is for GitHub Actions programmatic authentication only; no Console login is required.
+- [x] Created an IAM access key and stored it in GitHub encrypted secrets.
+- [x] Did not use a personal or root access key.
+- [x] Did not attach `AdministratorAccess`, `PowerUserAccess`, or unrestricted EC2 permissions.
+
+The access key is used only by GitHub Actions through `aws-actions/configure-aws-credentials`. It must never be committed to either repository or printed in workflow logs.
+
+### B. IAM Policy For GitHub Actions
+
+The IAM user has a restricted policy for:
+
+- [x] ECR authentication: `ecr:GetAuthorizationToken`.
+- [x] ECR image push/pull operations.
+- [x] ECR repository access limited to:
+  - `stealdeal-frontend`
+  - `stealdeal-identity`
+  - `stealdeal-store`
+  - `stealdeal-cart`
+  - `stealdeal-order`
+  - `stealdeal-payment`
+  - `stealdeal-notification`
+  - `stealdeal-database-migrator`
+- [x] SSM `SendCommand` limited to EC2 instance `i-012543d83b62f9bff`.
+- [x] SSM command status and managed-instance read operations.
+- [x] Unrelated IAM/EC2 administration permissions remain unavailable.
+
+`ec2:DescribeInstances` is intentionally not required for the authentication test. SSM status should be checked with `ssm:DescribeInstanceInformation` instead, preserving least privilege.
+
+### C. GitHub Repository Secrets
+
+The following secrets are configured in both repositories under `Settings -> Secrets and variables -> Actions`:
+
+- [x] `AWS_ACCESS_KEY_ID`
+- [x] `AWS_SECRET_ACCESS_KEY`
+- [x] `AWS_ACCOUNT_ID` = `735394850167`
+- [x] `AWS_REGION` = `us-east-1`
+- [x] `AWS_EC2_INSTANCE_ID` = `i-012543d83b62f9bff`
+
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are sensitive. The account ID, region and instance ID are configuration values, but keeping them in the same GitHub secret set is acceptable for this lab.
+
+### D. EC2 IAM Role And Instance Profile For SSM
+
+The EC2 instance has a separate IAM role/instance profile. This identity is different from the GitHub Actions IAM user.
+
+```text
+GitHub Actions IAM user:
+github-actions-stealdeal-lab
+
+EC2 IAM role/instance profile:
+stealdeal-ec2-ssm-role
+stealdeal-ec2-ssm-profile
+```
+
+Completed configuration:
+
+- [x] Created an EC2-trusted IAM role.
+- [x] Attached AWS managed policy `AmazonSSMManagedInstanceCore`.
+- [x] Installed AWS CLI on the EC2 host so SSM commands can authenticate Docker to ECR.
+- [x] Added least-privilege ECR pull permissions to `stealdeal-ec2-ssm-role`:
+  - `ecr:GetAuthorizationToken` on `*`.
+  - `ecr:BatchCheckLayerAvailability`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on required ECR repositories.
+- [x] Created/used an EC2 instance profile containing that role.
+- [x] Attached the instance profile to `i-012543d83b62f9bff`.
+
+The ECR pull policy added to the EC2 role is equivalent to:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AuthenticateToEcr",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PullFrontendImage",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ],
+      "Resource": "arn:aws:ecr:us-east-1:735394850167:repository/stealdeal-frontend"
+    }
+  ]
+}
+```
+
+Initially the EC2 role had only `AmazonSSMManagedInstanceCore`. The first frontend CD attempt reached EC2 but failed at `aws ecr get-login-password` with `AccessDeniedException`; adding the ECR pull policy fixed the deployment. When implementing Backend CD, add the same read actions for each backend ECR repository, including `stealdeal-database-migrator` if the migrator image is pulled on EC2.
+
+The EC2 role allows the EC2-side SSM Agent to communicate with Systems Manager and allows Docker to pull private ECR images. It does not grant GitHub Actions access; GitHub Actions uses its own IAM user.
+
+The ECR login is performed on EC2 for every deployment because GitHub's AWS credentials configure the GitHub runner, not the Docker daemon on EC2:
+
+```bash
+aws ecr get-login-password --region us-east-1 |
+  docker login --username AWS --password-stdin 735394850167.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### E. SSM Agent On EC2
+
+Completed configuration:
+
+- [x] Installed SSM Agent on Ubuntu using Snap.
+- [x] Enabled and started service:
+  `snap.amazon-ssm-agent.amazon-ssm-agent.service`.
+- [x] Confirmed service state is `active (running)`.
+- [x] Confirmed the instance can register with Systems Manager.
+
+The service name `amazon-ssm-agent.service` is not expected for the Snap installation. The correct service name is:
+
+```bash
+sudo systemctl status snap.amazon-ssm-agent.amazon-ssm-agent.service
+```
+
+### F. Purpose Of AWS Systems Manager
+
+SSM is the command bridge used by Phase 11:
+
+```text
+GitHub Actions
+  -> IAM user access key
+  -> AWS Systems Manager
+  -> SSM Agent on EC2
+  -> docker pull / compose / migration / health check
+```
+
+SSM replaces direct SSH from GitHub Actions. It is not used to build Docker images, store Docker images, or rotate IAM access keys.
+
+### G. `aws-auth-test.yml`
+
+The authentication test workflow validates Phase 10 configuration:
+
+- [x] GitHub Actions can authenticate to AWS.
+- [x] The workflow is operating in account `735394850167` and region `us-east-1`.
+- [x] Frontend/backend ECR access can be tested.
+- [x] EC2 SSM registration can be checked with `ssm:DescribeInstanceInformation`.
+- [x] SSM `SendCommand` can be used to test a command such as `docker --version`.
+- [x] Access outside the intended IAM policy is denied.
+
+The workflow is a validation workflow. It does not yet perform the full application deployment.
+
+### H. Access Key Rotation Scope
+
+Access key rotation is intentionally excluded from the current lab scope.
+
+- [x] No SSM-based key rotation was configured.
+- [x] No Lambda, EventBridge, Secrets Manager or GitHub Secrets rotation automation was added.
+- [ ] Manual rotation can be added later if the lab is kept for an extended period.
+
+SSM does not rotate IAM access keys. If rotation is needed later, create a replacement key, update GitHub Secrets, test both workflows, deactivate the old key and delete it.
+
+### Phase 10 Handoff To Phase 11
+
+Phase 11 can now use:
+
+- [x] AWS account `735394850167`.
+- [x] Region `us-east-1`.
+- [x] ECR registry `735394850167.dkr.ecr.us-east-1.amazonaws.com`.
+- [x] EC2 instance `i-012543d83b62f9bff`.
+- [x] IAM user credentials from GitHub Secrets.
+- [x] SSM command execution instead of GitHub-to-EC2 SSH.
+
+Phase 11 still needs to implement:
+
+- [x] Frontend CI builds and pushes the frontend image tagged with commit SHA.
+- [x] Update the frontend image tag on EC2 through SSM.
+- [x] Deploy frontend/Nginx independently.
+- [ ] Deploy backend services independently.
+- [ ] Run Database Migrator through the intended deployment flow.
+- [x] Execute the frontend health check.
+- [ ] Implement rollback to a previous image SHA.
+
+The IAM user/access-key approach is a lab simplification. Revisit OIDC before production because it removes long-lived AWS credentials from GitHub entirely.
 
 ---
 
@@ -395,41 +588,80 @@ Secure authentication to AWS without long-lived credentials (`AWS_ACCESS_KEY_ID`
 Each repository can be deployed independently to EC2 without touching or disrupting the other stack.
 
 ### 1. Frontend CD Workflow (`steal-deals-web/.github/workflows/cd.yml`)
-- [ ] Trigger on push/merge to `main`.
-- [ ] Assume AWS Role via OIDC.
-- [ ] Build & tag frontend Docker image with commit SHA:
+- [x] Frontend CI is triggered by a push to `duy-dev`.
+- [x] Frontend CI runs lint/Next.js build, then builds and pushes the Docker image to ECR with the commit SHA tag.
+- [x] Frontend CD is stored on the repository default branch `main` and listens for a successful `workflow_run` of `Frontend CI` on `duy-dev`.
+- [x] Keeping `cd.yml` on `main` is required for the `workflow_run` event. The application code does not need to be merged to `main` for this test flow.
+- [x] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
+- [x] Build and tag the frontend Docker image on the GitHub-hosted runner, not on EC2:
   ```bash
-  docker build -t <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/stealdeal-frontend:${{ github.sha }} .
-  docker push <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/stealdeal-frontend:${{ github.sha }}
+  docker build -t <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/stealdeal-frontend:${{ github.sha }} .
+  docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/stealdeal-frontend:${{ github.sha }}
   ```
-- [ ] Deploy to EC2 (via SSH or AWS SSM):
+- [x] Deploy to EC2 through AWS SSM. The CD workflow does not build Docker images and does not require frontend source code on EC2.
+- [x] The frontend Compose file keeps both local-build and ECR-image support:
+  ```yaml
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${FRONTEND_IMAGE:-stealdeal-frontend:local}
+  ```
+- [x] The SSM deployment sets `FRONTEND_IMAGE` only for the remote command session; a deployment `.env` file is not required:
   ```bash
   cd /opt/stealdeal/steal-deals-web
-  # Update image tag in compose or .env, then pull and restart frontend & nginx
+  export FRONTEND_IMAGE=<ECR_IMAGE_URI>:<COMMIT_SHA>
+  aws ecr get-login-password --region us-east-1 | \
+    docker login --username AWS --password-stdin <ECR_REGISTRY>
   docker compose pull frontend
-  docker compose up -d frontend nginx
+  docker compose up -d --force-recreate frontend nginx
   ```
-- [ ] Health check: `curl -f http://localhost:80/` on EC2.
-- [ ] Zero impact on running backend services.
+- [x] SSM parameters are passed as a JSON object through `jq`; AWS CLI shorthand is avoided because commas, equals signs and spaces in shell commands can cause parsing errors.
+- [x] The workflow prints `docker compose config --images` and `docker compose images frontend` to verify the resolved and running image tag.
+- [x] SSM output is printed even when the remote command fails, so ECR, IAM, Compose and health-check errors are visible in Actions logs.
+- [x] Health check: `curl --fail --silent --show-error --retry 12 --retry-delay 5 http://localhost:80/` on EC2.
+- [x] Zero impact on running backend services.
+
+Frontend CD operational prerequisites:
+
+- [x] The EC2 host has AWS CLI installed.
+- [x] The EC2 instance profile has ECR pull permissions in addition to `AmazonSSMManagedInstanceCore`.
+- [x] The EC2 host has the updated frontend `docker-compose.yml` containing `image: ${FRONTEND_IMAGE:-stealdeal-frontend:local}`.
+- [x] The shared external Docker network `stealdeal-network` exists.
+- [x] The backend Compose stack can remain running; frontend CD only targets the `frontend` and `nginx` services in the frontend Compose project.
+- [ ] If EC2 is stopped, CI can still push the image to ECR, but CD/SSM cannot deploy until EC2 and SSM Agent are online. Re-run CD after starting EC2.
+
+Important distinction:
+
+```text
+CI build/push:
+  GitHub runner -> Dockerfile -> ECR image
+
+CD deploy:
+  GitHub runner -> SSM -> EC2 -> ECR login -> docker pull -> Compose recreate
+```
+
+EC2 does not need the frontend source code or the GitHub workflow files for CD. It does need the Compose and Nginx deployment files. Changes inside the Docker image deploy automatically; changes to `docker-compose.yml` or `nginx.conf` do not, unless those files are separately synchronized to EC2.
 
 ### 2. Backend CD Workflow (`stealdeal-backend/.github/workflows/cd.yml`)
-- [ ] Trigger on push/merge to `main`.
-- [ ] Assume AWS Role via OIDC.
-- [ ] Build and push updated microservice images to respective ECR repositories.
-- [ ] Deploy to EC2:
+- [x] Backend CI detects changed service paths on `duy-dev`; Backend CD listens for a successful `workflow_run`. The CD workflow file must exist on the default branch `main`, matching the frontend workflow pattern.
+- [x] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
+- [x] Build and push only changed microservice images to their respective ECR repositories using the commit SHA tag.
+- [x] Build and run `database-migrator` only when the migrator or related service infrastructure/migration paths change.
+- [x] Deploy only changed API containers to EC2 through SSM:
   ```bash
   cd /opt/stealdeal/stealdeal-backend/src/Services
-  docker compose pull
-  docker compose up -d
-  # Run database migrations
-  docker compose --profile database up database-migrator
+  docker compose pull <changed-api-service>
+  docker compose up -d --no-deps --force-recreate <changed-api-service>
+  # The migrator runs first only when a migration-related path changed.
   ```
-- [ ] Health check backend endpoints through internal network.
-- [ ] Zero impact on running frontend/Nginx container.
+- [ ] Add dedicated health endpoints for all six APIs and use them in CD. Current CD verifies changed containers are running and checks the frontend through Nginx.
+- [x] Unchanged API, database, broker, cache and frontend containers are not recreated. Nginx is restarted after an API deployment because the current Nginx configuration caches Docker service IPs.
 
 ### 3. Rollback Strategy
-- [ ] Maintain previous commit SHA in deployment history.
-- [ ] Rollback by re-deploying the previous known-good image tag.
+- [x] Keep immutable commit SHA image tags in ECR and GitHub Actions run history.
+- [x] Support manual rollback through Backend CD `workflow_dispatch` by selecting a previous image SHA and the affected services.
+- [ ] Database schema rollback is intentionally not automated; EF Core migrations are forward-only and database backups remain the recovery mechanism.
 
 ---
 
