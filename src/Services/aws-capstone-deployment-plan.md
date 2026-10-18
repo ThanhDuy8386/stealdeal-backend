@@ -644,7 +644,7 @@ CD deploy:
 EC2 does not need the frontend source code or the GitHub workflow files for CD. It does need the Compose and Nginx deployment files. Changes inside the Docker image deploy automatically; changes to `docker-compose.yml` or `nginx.conf` do not, unless those files are separately synchronized to EC2.
 
 ### 2. Backend CD Workflow (`stealdeal-backend/.github/workflows/cd.yml`)
-- [x] Backend CI detects changed service paths on `duy-dev`; Backend CD listens for a successful `workflow_run`. The CD workflow file must exist on the default branch `main`, matching the frontend workflow pattern.
+- [x] Backend CI detects changed service paths on `main`; Backend CD listens for a successful `workflow_run` on `main`. The CD workflow file must exist on the default branch `main`, matching the frontend workflow pattern.
 - [x] Configure AWS credentials using the dedicated IAM user access key stored in GitHub Secrets.
 - [x] Build and push only changed microservice images to their respective ECR repositories using the commit SHA tag.
 - [x] Support a manual `full_build` CI dispatch for the initial ECR bootstrap, publishing all six API images and the database migrator.
