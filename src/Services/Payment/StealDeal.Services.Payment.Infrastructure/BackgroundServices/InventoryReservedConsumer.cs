@@ -14,6 +14,9 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
 {
     public class InventoryReservedConsumer : BackgroundService
     {
+        private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(60);
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true
@@ -42,72 +45,94 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
         {
             _logger.LogInformation("InventoryReservedConsumer background service is starting.");
 
-            try
+            var retryDelay = InitialRetryDelay;
+
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var factory = new ConnectionFactory
+                try
                 {
-                    HostName = _rabbitSettings.HostName,
-                    Port = _rabbitSettings.Port,
-                    UserName = _rabbitSettings.UserName,
-                    Password = _rabbitSettings.Password,
-                    AutomaticRecoveryEnabled = true,
-                    TopologyRecoveryEnabled = true
-                };
+                    await StartConsumerAsync(stoppingToken);
+                    retryDelay = InitialRetryDelay;
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "InventoryReservedConsumer could not connect to RabbitMQ. Retrying in {RetryDelaySeconds} seconds.",
+                        retryDelay.TotalSeconds);
 
-                _connection = await factory.CreateConnectionAsync(stoppingToken);
-                _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
+                    await DisposeRabbitResourcesAsync();
+                    await Task.Delay(retryDelay, stoppingToken);
 
-                await _channel.ExchangeDeclareAsync(
-                    exchange: _consumerSettings.ExchangeName,
-                    type: _consumerSettings.ExchangeType,
-                    durable: true,
-                    autoDelete: false,
-                    arguments: null,
-                    cancellationToken: stoppingToken);
-
-                await _channel.QueueDeclareAsync(
-                    queue: _consumerSettings.QueueName,
-                    durable: true,
-                    exclusive: false,
-                    autoDelete: false,
-                    arguments: null,
-                    cancellationToken: stoppingToken);
-
-                await _channel.QueueBindAsync(
-                    queue: _consumerSettings.QueueName,
-                    exchange: _consumerSettings.ExchangeName,
-                    routingKey: _consumerSettings.BindingKey,
-                    cancellationToken: stoppingToken);
-
-                await _channel.BasicQosAsync(
-                    prefetchSize: 0,
-                    prefetchCount: _consumerSettings.PrefetchCount,
-                    global: false,
-                    cancellationToken: stoppingToken);
-
-                var consumer = new AsyncEventingBasicConsumer(_channel);
-                consumer.ReceivedAsync += OnMessageReceivedAsync;
-
-                await _channel.BasicConsumeAsync(
-                    queue: _consumerSettings.QueueName,
-                    autoAck: false,
-                    consumer: consumer,
-                    cancellationToken: stoppingToken);
-
-                _logger.LogInformation(
-                    "InventoryReservedConsumer successfully bound and listening to {QueueName}.",
-                    _consumerSettings.QueueName);
-
-                await Task.Delay(Timeout.Infinite, stoppingToken);
+                    retryDelay = TimeSpan.FromSeconds(
+                        Math.Min(retryDelay.TotalSeconds * 2, MaxRetryDelay.TotalSeconds));
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+
+            await DisposeRabbitResourcesAsync();
+        }
+
+        private async Task StartConsumerAsync(CancellationToken stoppingToken)
+        {
+            var factory = new ConnectionFactory
             {
-                // App is stopping.
-            }
-            catch (Exception ex)
-            {
-                _logger.LogCritical(ex, "Fatal error occurred while starting InventoryReservedConsumer.");
-            }
+                HostName = _rabbitSettings.HostName,
+                Port = _rabbitSettings.Port,
+                UserName = _rabbitSettings.UserName,
+                Password = _rabbitSettings.Password,
+                AutomaticRecoveryEnabled = true,
+                TopologyRecoveryEnabled = true
+            };
+
+            _connection = await factory.CreateConnectionAsync(stoppingToken);
+            _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
+
+            await _channel.ExchangeDeclareAsync(
+                exchange: _consumerSettings.ExchangeName,
+                type: _consumerSettings.ExchangeType,
+                durable: true,
+                autoDelete: false,
+                arguments: null,
+                cancellationToken: stoppingToken);
+
+            await _channel.QueueDeclareAsync(
+                queue: _consumerSettings.QueueName,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null,
+                cancellationToken: stoppingToken);
+
+            await _channel.QueueBindAsync(
+                queue: _consumerSettings.QueueName,
+                exchange: _consumerSettings.ExchangeName,
+                routingKey: _consumerSettings.BindingKey,
+                cancellationToken: stoppingToken);
+
+            await _channel.BasicQosAsync(
+                prefetchSize: 0,
+                prefetchCount: _consumerSettings.PrefetchCount,
+                global: false,
+                cancellationToken: stoppingToken);
+
+            var consumer = new AsyncEventingBasicConsumer(_channel);
+            consumer.ReceivedAsync += OnMessageReceivedAsync;
+
+            await _channel.BasicConsumeAsync(
+                queue: _consumerSettings.QueueName,
+                autoAck: false,
+                consumer: consumer,
+                cancellationToken: stoppingToken);
+
+            _logger.LogInformation(
+                "InventoryReservedConsumer successfully bound and listening to {QueueName}.",
+                _consumerSettings.QueueName);
+
+            await Task.Delay(Timeout.Infinite, stoppingToken);
         }
 
         private async Task OnMessageReceivedAsync(object sender, BasicDeliverEventArgs args)
@@ -181,17 +206,40 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
         {
             _logger.LogInformation("InventoryReservedConsumer background service is stopping.");
 
+            await DisposeRabbitResourcesAsync();
+
+            await base.StopAsync(cancellationToken);
+        }
+
+        private async Task DisposeRabbitResourcesAsync()
+        {
             if (_channel != null)
             {
-                await _channel.CloseAsync(cancellationToken);
+                try
+                {
+                    await _channel.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Error while disposing InventoryReservedConsumer channel.");
+                }
+
+                _channel = null;
             }
 
             if (_connection != null)
             {
-                await _connection.CloseAsync(cancellationToken);
-            }
+                try
+                {
+                    await _connection.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Error while disposing InventoryReservedConsumer connection.");
+                }
 
-            await base.StopAsync(cancellationToken);
+                _connection = null;
+            }
         }
     }
 }
