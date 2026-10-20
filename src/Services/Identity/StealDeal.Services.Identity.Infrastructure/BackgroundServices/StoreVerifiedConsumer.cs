@@ -14,6 +14,8 @@ namespace StealDeal.Services.Identity.Infrastructure.BackgroundServices;
 
 public class StoreVerifiedConsumer : BackgroundService
 {
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(60);
+
     private readonly RabbitMqSettings _rabbitSettings;
     private readonly StoreVerifiedConsumerSettings _consumerSettings;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -37,10 +39,11 @@ public class StoreVerifiedConsumer : BackgroundService
     protected override async Task ExecuteAsync(
         CancellationToken cancellationToken)
     {
-        var retryCount = 0;
-
         _logger.LogInformation(
             "StoreVerifiedConsumer started.");
+
+        var retryDelay = TimeSpan.FromSeconds(
+            Math.Max(1, _consumerSettings.ReconnectDelaySeconds));
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -48,7 +51,8 @@ public class StoreVerifiedConsumer : BackgroundService
             {
                 await StartConsumerAsync(cancellationToken);
 
-                retryCount = 0;
+                retryDelay = TimeSpan.FromSeconds(
+                    Math.Max(1, _consumerSettings.ReconnectDelaySeconds));
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -57,34 +61,21 @@ public class StoreVerifiedConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                retryCount++;
+                _logger.LogWarning(
+                    ex,
+                    "StoreVerifiedConsumer could not connect to RabbitMQ. " +
+                    "Retrying in {RetryDelaySeconds} seconds.",
+                    retryDelay.TotalSeconds);
 
-                if (retryCount <= _consumerSettings.MaxRetryCount)
-                {
-                    _logger.LogError(
-                        ex,
-                        "RabbitMQ connection failed. " +
-                        "Retry {RetryCount} of {MaxRetryCount}.",
-                        retryCount,
-                        _consumerSettings.MaxRetryCount);
-                }
+                await DisposeRabbitResourcesAsync();
+                await Task.Delay(retryDelay, cancellationToken);
 
-                if (retryCount >= _consumerSettings.MaxRetryCount)
-                {
-                    _logger.LogCritical(
-                        "RabbitMQ connection failed after {MaxRetryCount} attempts. " +
-                        "StoreVerifiedConsumer will stop retrying.",
-                        _consumerSettings.MaxRetryCount);
-
-                    break;
-                }
+                retryDelay = TimeSpan.FromSeconds(
+                    Math.Min(retryDelay.TotalSeconds * 2, MaxRetryDelay.TotalSeconds));
             }
-
-            await Task.Delay(
-                TimeSpan.FromSeconds(
-                    _consumerSettings.ReconnectDelaySeconds),
-                cancellationToken);
         }
+
+        await DisposeRabbitResourcesAsync();
     }
 
     private async Task HandleMessageAsync(
@@ -150,13 +141,40 @@ public class StoreVerifiedConsumer : BackgroundService
     public override async Task StopAsync(
         CancellationToken cancellationToken)
     {
-        if (_channel is not null)
-            await _channel.CloseAsync(cancellationToken);
-
-        if (_connection is not null)
-            await _connection.CloseAsync(cancellationToken);
+        await DisposeRabbitResourcesAsync();
 
         await base.StopAsync(cancellationToken);
+    }
+
+    private async Task DisposeRabbitResourcesAsync()
+    {
+        if (_channel is not null)
+        {
+            try
+            {
+                await _channel.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error while disposing StoreVerifiedConsumer channel.");
+            }
+
+            _channel = null;
+        }
+
+        if (_connection is not null)
+        {
+            try
+            {
+                await _connection.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error while disposing StoreVerifiedConsumer connection.");
+            }
+
+            _connection = null;
+        }
     }
 
     private async Task StartConsumerAsync(CancellationToken cancellationToken)
