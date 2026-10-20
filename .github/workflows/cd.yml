@@ -190,7 +190,7 @@ jobs:
                       "rabbit_id=$(docker compose ps -q rabbitmq)",
                       "test -n \"$rabbit_id\"",
                       "rabbit_health=unknown",
-                      "for i in $(seq 1 60); do rabbit_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \"$rabbit_id\"); echo \"RabbitMQ health: $rabbit_health\"; if [ \"$rabbit_health\" = healthy ]; then break; fi; sleep 2; done",
+                      "for i in $(seq 1 60); do rabbit_health=$(docker inspect --format \"{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}\" \"$rabbit_id\"); echo \"RabbitMQ health: $rabbit_health\"; if [ \"$rabbit_health\" = healthy ]; then break; fi; sleep 2; done",
                       "test \"$rabbit_health\" = healthy"
                     ] else [] end)
                   + (if has_targets then [
