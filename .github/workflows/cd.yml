@@ -186,6 +186,14 @@ jobs:
                       "docker compose --profile database up --no-build --abort-on-container-exit --exit-code-from database-migrator database-migrator"
                     ] else [] end)
                   + (if has_targets then [
+                      "docker compose up -d --no-build rabbitmq",
+                      "rabbit_id=$(docker compose ps -q rabbitmq)",
+                      "test -n \"$rabbit_id\"",
+                      "rabbit_health=unknown",
+                      "for i in $(seq 1 60); do rabbit_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \"$rabbit_id\"); echo \"RabbitMQ health: $rabbit_health\"; if [ \"$rabbit_health\" = healthy ]; then break; fi; sleep 2; done",
+                      "test \"$rabbit_health\" = healthy"
+                    ] else [] end)
+                  + (if has_targets then [
                       (if has("identity") then ("docker compose config --images | grep -Fqx " + $identity) else empty end),
                       (if has("notification") then ("docker compose config --images | grep -Fqx " + $notification) else empty end),
                       (if has("store") then ("docker compose config --images | grep -Fqx " + $store) else empty end),
