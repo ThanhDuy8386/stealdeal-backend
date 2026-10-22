@@ -158,6 +158,7 @@ jobs:
                   ]
                   + (if $compose_changed then [
                       ("cd " + $repo_path),
+                      ("git config --global --get-all safe.directory | grep -Fqx " + $repo_path + " || git config --global --add safe.directory " + $repo_path),
                       "test -z \"$(git status --porcelain)\"",
                       "git fetch origin main --prune",
                       "git cat-file -e \"$DEPLOY_SHA^{commit}\"",
