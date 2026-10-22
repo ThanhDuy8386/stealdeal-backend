@@ -24,6 +24,11 @@ on:
         required: true
         default: false
         type: boolean
+      compose_changed:
+        description: Fetch and apply backend deployment configuration from this commit
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -38,6 +43,7 @@ env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   AWS_EC2_INSTANCE_ID: ${{ secrets.AWS_EC2_INSTANCE_ID }}
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  BACKEND_REPO_PATH: /opt/stealdeal/stealdeal-backend
   DEPLOY_PATH: /opt/stealdeal/stealdeal-backend/src/Services
   FRONTEND_PATH: /opt/stealdeal/steal-deals-web
 
@@ -63,6 +69,7 @@ jobs:
         env:
           SERVICES: ${{ inputs.services }}
           RUN_MIGRATOR: ${{ inputs.run_migrator }}
+          COMPOSE_CHANGED: ${{ inputs.compose_changed }}
         run: |
           set -euo pipefail
 
@@ -77,11 +84,14 @@ jobs:
             --arg sha "${{ inputs.image_sha }}" \
             --argjson api_services "$api_services" \
             --argjson run_migrator "$RUN_MIGRATOR" \
+            --argjson compose_changed "$COMPOSE_CHANGED" \
             '{
               commit_sha: $sha,
               api_services: $api_services,
               docker_services: $api_services,
-              run_migrator: $run_migrator
+              run_migrator: $run_migrator,
+              application_code_changed: (($api_services | length) > 0 or $run_migrator),
+              compose_changed: $compose_changed
             }' > .deploy/deployment-manifest.json
 
       - name: Configure AWS credentials
@@ -98,6 +108,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          [[ "$IMAGE_TAG" =~ ^[0-9a-fA-F]{40}$ ]]
+
           identity_image="$ECR_REGISTRY/stealdeal-identity:$IMAGE_TAG"
           notification_image="$ECR_REGISTRY/stealdeal-notification:$IMAGE_TAG"
           store_image="$ECR_REGISTRY/stealdeal-store:$IMAGE_TAG"
@@ -108,12 +120,15 @@ jobs:
 
           api_services=$(jq -c '.api_services' .deploy/deployment-manifest.json)
           run_migrator=$(jq -r '.run_migrator' .deploy/deployment-manifest.json)
+          compose_changed=$(jq -r '.compose_changed // false' .deploy/deployment-manifest.json)
 
           commands=$(jq -cn \
+            --arg repo_path "$BACKEND_REPO_PATH" \
             --arg path "$DEPLOY_PATH" \
             --arg frontend_path "$FRONTEND_PATH" \
             --arg region "$AWS_REGION" \
             --arg registry "$ECR_REGISTRY" \
+            --arg deploy_sha "$IMAGE_TAG" \
             --arg identity "$identity_image" \
             --arg notification "$notification_image" \
             --arg store "$store_image" \
@@ -123,6 +138,7 @@ jobs:
             --arg migrator "$migrator_image" \
             --argjson api_services "$api_services" \
             --argjson run_migrator "$run_migrator" \
+            --argjson compose_changed "$compose_changed" \
             '
               def has($service): (($api_services | index($service)) != null);
               def targets: [
@@ -138,8 +154,21 @@ jobs:
                 commands: (
                   [
                     "set -e",
-                    ("cd " + $path)
+                    ("export DEPLOY_SHA=" + $deploy_sha)
                   ]
+                  + (if $compose_changed then [
+                      ("cd " + $repo_path),
+                      "test -z \"$(git status --porcelain)\"",
+                      "git fetch origin main --prune",
+                      "git cat-file -e \"$DEPLOY_SHA^{commit}\"",
+                      "git checkout --detach \"$DEPLOY_SHA\"",
+                      "test \"$(git rev-parse HEAD)\" = \"$DEPLOY_SHA\"",
+                      "echo Config commit: $(git rev-parse HEAD)",
+                      ("echo Compose SHA-256: $(sha256sum " + $path + "/docker-compose.yml | cut -d\" \" -f1)"),
+                      ("cd " + $path)
+                    ] else [
+                      ("cd " + $path)
+                    ] end)
                   + (if has("identity") then ["export IDENTITY_IMAGE=" + $identity] else [] end)
                   + (if has("notification") then ["export NOTIFICATION_IMAGE=" + $notification] else [] end)
                   + (if has("store") then ["export STORE_IMAGE=" + $store] else [] end)
@@ -178,7 +207,10 @@ jobs:
                     ] else [] end)
                   + (if ($run_migrator or has_targets) then [
                       ("aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry)
-                    ] else ["echo No backend deployment required"] end)
+                    ] else ["echo No backend image deployment required"] end)
+                  + (if $compose_changed then [
+                      "docker compose config --quiet"
+                    ] else [] end)
                   + (if $run_migrator then [
                       ("docker compose --profile database config --images | grep -Fqx " + $migrator),
                       "docker compose --profile database pull database-migrator",
@@ -200,17 +232,23 @@ jobs:
                       (if has("cart") then ("docker compose config --images | grep -Fqx " + $cart) else empty end),
                       (if has("order") then ("docker compose config --images | grep -Fqx " + $order) else empty end),
                       (if has("payment") then ("docker compose config --images | grep -Fqx " + $payment) else empty end),
-                      ("docker compose pull " + (targets | join(" "))),
-                      ("docker compose up -d --no-build --no-deps --force-recreate " + (targets | join(" "))),
-                      "docker compose ps --status running"
+                      ("docker compose pull " + (targets | join(" ")))
                     ] else [] end)
-                  + (if has("identity") then ["docker compose ps --status running --services | grep -qx identity-api"] else [] end)
-                  + (if has("notification") then ["docker compose ps --status running --services | grep -qx notification-api"] else [] end)
-                  + (if has("store") then ["docker compose ps --status running --services | grep -qx store-api"] else [] end)
-                  + (if has("cart") then ["docker compose ps --status running --services | grep -qx cart-api"] else [] end)
-                  + (if has("order") then ["docker compose ps --status running --services | grep -qx order-api"] else [] end)
-                  + (if has("payment") then ["docker compose ps --status running --services | grep -qx payment-api"] else [] end)
-                  + (if has_targets then [
+                  + (if $compose_changed then [
+                      "docker compose up -d --no-build --force-recreate",
+                      "docker compose ps --status running",
+                      "for service in identity-api notification-api store-api cart-api order-api payment-api; do docker compose ps --status running --services | grep -qx \"$service\"; done"
+                    ] elif has_targets then [
+                      ("docker compose up -d --no-build --no-deps --force-recreate " + (targets | join(" "))),
+                      "docker compose ps --status running",
+                      (if has("identity") then "docker compose ps --status running --services | grep -qx identity-api" else empty end),
+                      (if has("notification") then "docker compose ps --status running --services | grep -qx notification-api" else empty end),
+                      (if has("store") then "docker compose ps --status running --services | grep -qx store-api" else empty end),
+                      (if has("cart") then "docker compose ps --status running --services | grep -qx cart-api" else empty end),
+                      (if has("order") then "docker compose ps --status running --services | grep -qx order-api" else empty end),
+                      (if has("payment") then "docker compose ps --status running --services | grep -qx payment-api" else empty end)
+                    ] else [] end)
+                  + (if ($compose_changed or has_targets) then [
                       ("cd " + $frontend_path),
                       "docker compose restart nginx",
                       "sleep 5",

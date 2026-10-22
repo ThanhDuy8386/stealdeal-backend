@@ -27,6 +27,8 @@ jobs:
       has_api: ${{ steps.matrix.outputs.has_api }}
       has_docker: ${{ steps.matrix.outputs.has_docker }}
       run_migrator: ${{ steps.matrix.outputs.run_migrator }}
+      application_code_changed: ${{ steps.matrix.outputs.application_code_changed }}
+      compose_changed: ${{ steps.matrix.outputs.compose_changed }}
 
     steps:
       - name: Checkout source code
@@ -61,6 +63,8 @@ jobs:
               - 'src/Services/Payment/**/Migrations/**'
             database_migrator:
               - 'src/Services/database/DatabaseMigrator/**'
+            compose:
+              - 'src/Services/docker-compose.yml'
 
       - name: Build service matrices
         id: matrix
@@ -77,6 +81,7 @@ jobs:
           ORDER_MIGRATOR_CHANGED: ${{ steps.filter.outputs.order_migrator }}
           PAYMENT_MIGRATOR_CHANGED: ${{ steps.filter.outputs.payment_migrator }}
           DATABASE_MIGRATOR_CHANGED: ${{ steps.filter.outputs.database_migrator }}
+          COMPOSE_CHANGED: ${{ steps.filter.outputs.compose }}
           FULL_BUILD: ${{ inputs.full_build == true }}
         run: |
           set -euo pipefail
@@ -187,17 +192,23 @@ jobs:
           docker_services=$(jq -c '[.[] | .name]' <<< "$docker_matrix")
           has_api=$(jq -r 'length > 0' <<< "$api_matrix")
           has_docker=$(jq -r 'length > 0' <<< "$docker_matrix")
+          application_code_changed=$(jq -r 'length > 0' <<< "$docker_matrix")
+          compose_changed="$COMPOSE_CHANGED"
 
           jq -n \
             --arg sha "$GITHUB_SHA" \
             --argjson api_services "$api_services" \
             --argjson docker_services "$docker_services" \
             --argjson run_migrator "$migrator_changed" \
+            --argjson application_code_changed "$application_code_changed" \
+            --argjson compose_changed "$compose_changed" \
             '{
               commit_sha: $sha,
               api_services: $api_services,
               docker_services: $docker_services,
-              run_migrator: $run_migrator
+              run_migrator: $run_migrator,
+              application_code_changed: $application_code_changed,
+              compose_changed: $compose_changed
             }' > deployment-manifest.json
 
           echo "api_matrix=$api_matrix" >> "$GITHUB_OUTPUT"
@@ -207,6 +218,19 @@ jobs:
           echo "has_api=$has_api" >> "$GITHUB_OUTPUT"
           echo "has_docker=$has_docker" >> "$GITHUB_OUTPUT"
           echo "run_migrator=$migrator_changed" >> "$GITHUB_OUTPUT"
+          echo "application_code_changed=$application_code_changed" >> "$GITHUB_OUTPUT"
+          echo "compose_changed=$compose_changed" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Compose configuration
+        env:
+          CI_ENV_FILE: ${{ runner.temp }}/backend-compose.env
+        run: |
+          set -euo pipefail
+          printf 'MSSQL_SA_PASSWORD=ci-only-validation-password-123!\n' > "$CI_ENV_FILE"
+          docker compose \
+            --env-file "$CI_ENV_FILE" \
+            -f src/Services/docker-compose.yml \
+            config --quiet
 
       - name: Upload deployment manifest
         uses: actions/upload-artifact@v4
