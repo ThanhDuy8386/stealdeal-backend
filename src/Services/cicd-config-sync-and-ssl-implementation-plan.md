@@ -101,16 +101,30 @@ git clone git@github.com:<org>/steal-deals-web.git \
 
 ## Phase 1: Backend CI/CD
 
+Implementation reference:
+
+~~~text
+Backend CI: .github/workflows/ci.yml
+Backend CD: .github/workflows/cd.yml
+~~~
+
+The frontend can follow the same separation: frontend CI creates a
+manifest for image/config changes, while frontend CD uses SSM to fetch the
+frontend repository only when Compose or Nginx runtime configuration changes.
+
 ### 1. Detect thay đổi
 
 Thêm path detection:
 
 ~~~yaml
-deployment_config:
+compose:
   - 'src/Services/docker-compose.yml'
-  - 'src/Services/**/deploy/**'
-  - '.github/workflows/**'
 ~~~
+
+Changes under `.github/workflows/**` still trigger Backend CI because the
+workflow listens to every push on `main`, but they are not runtime Compose
+changes and therefore do not set `compose_changed` or cause an EC2 config
+checkout/recreate by themselves.
 
 Manifest cần có:
 
@@ -120,6 +134,19 @@ Manifest cần có:
   "api_services": ["identity"],
   "docker_services": ["identity"],
   "application_code_changed": true,
+  "run_migrator": false,
+  "compose_changed": true
+}
+~~~
+
+Với config-only change, manifest thực tế có dạng:
+
+~~~json
+{
+  "commit_sha": "<sha>",
+  "api_services": [],
+  "docker_services": [],
+  "application_code_changed": false,
   "run_migrator": false,
   "compose_changed": true
 }
@@ -137,6 +164,9 @@ Manifest cần có:
 docker compose --env-file <ci-env-file> \
   -f src/Services/docker-compose.yml config --quiet
 ~~~
+
+`ci-env-file` chỉ chứa các giá trị giả lập cần cho Compose validation, không
+chứa production secret và không được đưa vào artifact hoặc log.
 
 ### 3. Backend CD behavior
 
@@ -162,12 +192,19 @@ Chỉ khi `compose_changed=true`, CD mới gửi SSM command để cập nhật 
 
 ~~~bash
 cd /opt/stealdeal/stealdeal-backend
-test -z "$(git status --porcelain)"
-git fetch origin main --prune
-git cat-file -e "$DEPLOY_SHA^{commit}"
-git checkout --detach "$DEPLOY_SHA"
+worktree_status=$(git -c safe.directory=/opt/stealdeal/stealdeal-backend status --porcelain)
+test -z "$worktree_status"
+git -c safe.directory=/opt/stealdeal/stealdeal-backend fetch origin main --prune
+git -c safe.directory=/opt/stealdeal/stealdeal-backend cat-file -e "$DEPLOY_SHA^{commit}"
+git -c safe.directory=/opt/stealdeal/stealdeal-backend checkout --detach "$DEPLOY_SHA"
 cd src/Services
 ~~~
+
+SSM có thể chạy với user khác owner của working tree và có thể không có biến
+`HOME`. Vì vậy không dùng `git config --global`; mỗi lệnh Git truyền trực tiếp
+`safe.directory` cho đúng repository. Nếu working tree không sạch, fetch lỗi,
+commit không tồn tại hoặc checkout sai SHA, SSM command phải fail trước khi
+recreate container.
 
 Sau đó:
 
@@ -184,10 +221,38 @@ docker compose config --quiet
 docker compose up -d --no-build --no-deps --force-recreate <service>
 ~~~
 
-4. Nếu chỉ thay đổi Compose, chạy docker compose up -d --no-build cho service
-   bị ảnh hưởng.
-5. Giữ nguyên flow migrator hiện tại khi manifest yêu cầu migration.
-6. Chạy health check và ghi nhận commit SHA.
+4. Nếu chỉ thay đổi Compose, không build hoặc pull image mới. CD giữ nguyên các
+   biến `*_IMAGE` trong runtime `.env` trên EC2 và chạy:
+
+~~~bash
+docker compose up -d --no-build --force-recreate
+~~~
+
+Vì `src/Services/docker-compose.yml` là Compose file dùng chung, config-only
+deployment hiện recreate toàn bộ API backend. Các container dùng lại image
+tag đang có trong runtime `.env`; config commit không tạo image tag mới.
+
+5. Nếu source và Compose cùng thay đổi, CD cập nhật image variables, pull đúng
+   image SHA từ ECR rồi recreate theo config mới trong cùng một SSM command.
+6. Giữ nguyên flow migrator hiện tại khi manifest yêu cầu migration.
+7. Restart Nginx frontend và chạy health check port 80 sau backend deployment.
+8. Ghi nhận config commit SHA và SHA-256 của `docker-compose.yml` trong SSM log.
+
+Backend CD manual dispatch hỗ trợ:
+
+~~~text
+image_sha: commit SHA cần deploy
+services: all, comma-separated service names, hoặc none
+run_migrator: true/false
+compose_changed: true/false
+~~~
+
+`services=none` và `compose_changed=true` dùng để test hoặc apply config-only
+deployment mà không yêu cầu image mới trên ECR.
+
+Backend CD chỉ restart Nginx hiện có để refresh backend container IP. Nó không
+fetch hoặc deploy `nginx.conf`; việc detect và sync Nginx thuộc Frontend CI/CD
+ở Phase 2.
 
 ### 4. Environment variable mới
 
@@ -203,82 +268,135 @@ khi deploy. Nếu thiếu biến bắt buộc, CD phải fail trước khi recre
 
 ## Phase 2: Frontend CI/CD
 
-### 1. Detect thay đổi
+### 1. Frontend workflow structure
 
-Thêm path detection:
+Implementation files:
 
-~~~yaml
-deployment_config:
-  - 'docker-compose.yml'
-  - 'nginx.conf'
-  - 'deploy/**'
-  - '.github/workflows/**'
+~~~text
+Frontend CI: .github/workflows/ci.yml
+Frontend CD: .github/workflows/cd.yml
 ~~~
 
-Manifest cần có:
+The frontend repository does not use `deploy/**`. Runtime configuration is
+limited to the root `docker-compose.yml` and `nginx.conf`.
+
+### 2. Detect thay đổi
+
+Frontend CI detects three independent states:
+
+~~~yaml
+frontend_source:
+  - '**'
+  - '!docker-compose.yml'
+  - '!nginx.conf'
+  - '!.github/**'
+compose:
+  - 'docker-compose.yml'
+nginx:
+  - 'nginx.conf'
+~~~
+
+Changes under `.github/workflows/**` still trigger Frontend CI because the
+workflow listens to every push on `main`, but they do not set any runtime
+change flag and therefore do not fetch or recreate containers by themselves.
+
+The deployment manifest contains:
 
 ~~~json
 {
   "commit_sha": "<sha>",
   "frontend_image_changed": false,
+  "application_code_changed": false,
   "compose_changed": false,
   "nginx_changed": true
 }
 ~~~
 
-### 2. CI behavior
+For a frontend source change, `frontend_image_changed=true`. For a
+config-only change, both `frontend_image_changed` and
+`application_code_changed` remain false.
 
-- Chỉ frontend source thay đổi: giữ nguyên build/test/push image.
-- Chỉ Compose hoặc Nginx thay đổi: không cần build image.
-- Source và config cùng thay đổi: build image và pull config mới qua SSM.
-- Config-only change vẫn phải trigger CD.
+### 3. CI behavior
 
-### 3. Frontend CD behavior
+- Chỉ frontend source thay đổi: chạy `npm ci`, lint, build, rồi build/push image.
+- Chỉ `docker-compose.yml` hoặc `nginx.conf` thay đổi: không chạy Node build và
+  không build/push image.
+- Source và config cùng thay đổi: build/push image và sync config trong cùng CD
+  run theo cùng một commit SHA.
+- Mọi loại change đều upload manifest để Frontend CD quyết định deployment.
+- CI luôn validate Compose bằng env file tạm an toàn:
+
+~~~bash
+docker compose --env-file <ci-env-file> \
+  -f docker-compose.yml config --quiet
+~~~
+
+### 4. Frontend CD behavior
 
 CD quyết định theo manifest:
 
 ~~~text
 frontend_image_changed=true, compose_changed=false, nginx_changed=false
-    -> giữ nguyên flow pull image và recreate hiện tại
+    -> export/persist FRONTEND_IMAGE
+    -> login ECR, verify image SHA, pull image
+    -> recreate frontend và nginx
 
-compose_changed=true hoặc nginx_changed=true
-    -> gửi SSM command fetch/checkout DEPLOY_SHA
-    -> validate config mới
-    -> apply Compose/Nginx config
+compose_changed=true
+    -> SSM fetch/checkout DEPLOY_SHA
+    -> validate Compose
+    -> validate Nginx config
+    -> recreate frontend và nginx bằng --no-build
+
+nginx_changed=true, compose_changed=false
+    -> SSM fetch/checkout DEPLOY_SHA
+    -> validate Nginx config
+    -> recreate nginx bằng --no-build
+    -> nginx -t và reload
 
 frontend_image_changed=true và có config change
-    -> build/push image mới
-    -> fetch/checkout config của cùng DEPLOY_SHA
-    -> deploy một lần
+    -> pull image mới
+    -> fetch/checkout config cùng DEPLOY_SHA
+    -> validate rồi deploy một lần
 ~~~
 
-Chỉ khi có config change, CD mới gửi SSM command để cập nhật repository:
+Chỉ khi `compose_changed=true` hoặc `nginx_changed=true`, CD mới fetch
+frontend repository trên EC2:
 
 ~~~bash
 cd /opt/stealdeal/steal-deals-web
-test -z "$(git status --porcelain)"
-git fetch origin main --prune
-git cat-file -e "$DEPLOY_SHA^{commit}"
-git checkout --detach "$DEPLOY_SHA"
+worktree_status=$(git -c safe.directory=/opt/stealdeal/steal-deals-web status --porcelain)
+test -z "$worktree_status"
+git -c safe.directory=/opt/stealdeal/steal-deals-web fetch origin main --prune
+git -c safe.directory=/opt/stealdeal/steal-deals-web cat-file -e "$DEPLOY_SHA^{commit}"
+git -c safe.directory=/opt/stealdeal/steal-deals-web checkout --detach "$DEPLOY_SHA"
 ~~~
 
-Sau đó dùng các file mới trong repository. Với Compose:
+Các lệnh Git truyền trực tiếp `safe.directory`, không dùng
+`git config --global`, vì SSM shell có thể không có `$HOME` và user chạy SSM có
+thể khác owner của working tree.
+
+Với config change, CD dùng:
 
 ~~~bash
 docker compose config --quiet
-docker compose up -d --no-build <affected-services>
+docker compose run --rm --no-deps nginx nginx -t
 ~~~
 
-Với Nginx:
+Sau khi validation pass:
 
 ~~~bash
+docker compose up -d --no-build --force-recreate frontend nginx
 docker compose exec -T nginx nginx -t
 docker compose exec -T nginx nginx -s reload
 ~~~
 
-Nếu service không tên nginx, dùng tên service thực tế. Nếu frontend image cũng
-thay đổi, pull image mới và recreate frontend/Nginx sau khi config mới được
-validate.
+Với Nginx-only change, chỉ recreate/reload Nginx. Với image-only change, CD
+pull đúng ECR image SHA và persist `FRONTEND_IMAGE` trong runtime `.env` để các
+config-only deployment tiếp theo tiếp tục dùng đúng image hiện tại.
+
+Frontend CD manual dispatch hỗ trợ `image_sha`,
+`frontend_image_changed`, `compose_changed` và `nginx_changed`, nên có thể
+test config-only deployment mà không cần tạo image mới.
 
 ## Phase 3: SSL cho domain
 
@@ -413,3 +531,126 @@ Sau khi merge vào main, các trường hợp sau đều tự động hoạt đ�
 8. VNPAY gọi được IPN URL và Payment API trả response đúng.
 9. Không cần manual edit hoặc manual checkout trên EC2; fetch và checkout đúng
    SHA được CD gọi tự động qua SSM.
+
+## Post-deployment runtime secrets provisioning
+
+Sau khi hoàn thành CI/CD config sync và SSL, runtime secrets sẽ được provision
+tự động từ GitHub Actions Secrets xuống EC2. Secrets không được commit vào Git,
+không nằm trong deployment manifest, Docker image hoặc log của workflow.
+
+### Secret source và deployment flow
+
+GitHub Environment `production` là nơi lưu các credential dùng cho deployment:
+
+~~~text
+GitHub Actions production secrets
+    -> CD provision step
+    -> secure transport tới EC2
+    -> runtime env files ngoài Git repository
+    -> Docker Compose env_file
+    -> recreate các container bị ảnh hưởng
+~~~
+
+Phương án triển khai ban đầu có thể dùng GitHub Actions Secrets kết hợp với SSM
+Run Command hiện có. Provisioning step phải ghi các file runtime trên EC2 với
+quyền hạn chế, không in giá trị secret ra log và không truyền secret bằng cách
+ghép trực tiếp vào command string nếu cơ chế transport cho phép cách an toàn hơn.
+
+Các file runtime không nằm trong vùng được Git quản lý:
+
+~~~text
+/opt/stealdeal/runtime/identity.env
+/opt/stealdeal/runtime/notification.env
+/opt/stealdeal/runtime/store.env
+/opt/stealdeal/runtime/payment.env
+~~~
+
+Mỗi file phải có permission tương đương `0600` và chỉ user chạy Docker/deploy
+được đọc. CD phải kiểm tra sự tồn tại của các biến bắt buộc trước khi recreate
+container. Chỉ được log tên biến hoặc trạng thái đã được provision, không log
+giá trị.
+
+### Runtime variable mapping
+
+Các secret dùng cấu trúc tên của ASP.NET Core, trong đó dấu `:` được thay bằng
+`__`:
+
+~~~env
+# Identity và Store
+Aws__AccessKeyId=<S3 access key hiện tại>
+Aws__SecretAccessKey=<S3 secret key hiện tại>
+
+# Dùng cho tất cả API cần JWT
+Jwt__Secret=<production JWT secret>
+
+# Notification
+Brevo__ApiKey=<Brevo API key hiện tại>
+
+# Payment
+VnPay__HashSecret=<VNPAY hash secret>
+VnPay__ReturnUrl=https://<domain>/<frontend-return-route>
+VnPay__IpNUrl=https://<domain>/api/payment/vnpay/ipn
+
+# Store, nếu provider tương ứng được bật
+Geoapify__ApiKey=<Geoapify API key>
+Goong__ApiKey=<Goong API key>
+~~~
+
+Compose truyền các file này vào service tương ứng bằng `env_file`. Nếu cùng
+một key xuất hiện cả trong `env_file` và block `environment`, giá trị trong
+`environment` có độ ưu tiên cao hơn. Production phải dùng
+`ASPNETCORE_ENVIRONMENT=Production`; không dựa vào User Secrets trên EC2.
+
+### Provisioning và rotation
+
+Provision secrets phải chạy trong các trường hợp sau:
+
+1. EC2 bootstrap lần đầu.
+2. Deploy production lần đầu sau khi hoàn thành SSL.
+3. Secret được rotate hoặc thay đổi.
+4. Manual CD được chạy với tùy chọn `provision_secrets=true`.
+
+Thay đổi secret không yêu cầu build Docker image. Sau khi file runtime được cập
+nhật, CD chạy `docker compose up -d --no-build --force-recreate` cho các service
+bị ảnh hưởng.
+
+Nên commit các file mẫu không chứa giá trị thật, ví dụ:
+
+~~~text
+identity.env.example
+notification.env.example
+store.env.example
+payment.env.example
+~~~
+
+Các file `.env` thật phải bị loại khỏi Git và không được checkout từ repository.
+Git chỉ đồng bộ Compose/Nginx/source code; runtime secrets được đồng bộ bằng
+provisioning step riêng.
+
+### Required GitHub Actions secrets
+
+Tối thiểu cần cấu hình trong GitHub Environment `production`:
+
+~~~text
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+BREVO_API_KEY
+JWT_SECRET
+VNPAY_HASH_SECRET
+VNPAY_RETURN_URL
+VNPAY_IPN_URL
+GEOAPIFY_API_KEY hoặc GOONG_API_KEY
+MSSQL_SA_PASSWORD
+~~~
+
+Tên secret trong GitHub có thể khác tên ASP.NET Core, nhưng provisioning step
+phải map đúng sang tên `Section__Property` trước khi ghi vào runtime env file.
+
+### Security boundary
+
+GitHub Actions Secrets là nguồn credential cho phase này, không phải Git-tracked
+configuration. Workflow production phải được giới hạn trên branch `main`, dùng
+GitHub Environment protection/review nếu cần, và chỉ provision secrets sau khi
+CI thành công. Nếu sau này cần loại bỏ secret khỏi GitHub Actions và EC2 runtime
+file, có thể thay riêng secret source bằng AWS Secrets Manager mà không thay đổi
+các tên environment variable hoặc application code.
