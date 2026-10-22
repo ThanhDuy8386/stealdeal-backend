@@ -54,6 +54,8 @@ services:
   identity-api:
     build: ./Identity
     image: ${IDENTITY_IMAGE:-stealdeal-identity:local}
+    labels:
+      com.stealdeal.phase1-config-sync: "test-1"
     restart: unless-stopped
     ports:
       - "5158:5158"
