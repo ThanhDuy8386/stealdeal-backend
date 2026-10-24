@@ -420,7 +420,7 @@ the timestamp in `repliedAt`. Reply text cannot be empty whitespace.
 - `status: "Approved"` generates a slug from `officialCategoryName` (if provided to fix typos/casing) or `suggestedName`, verifies slug uniqueness against official categories (`409 Conflict`), inserts a new active `Category` with `iconUrl`, and updates suggestion status to `Approved`.
 - `status: "Rejected"` updates suggestion status to `Rejected` and records `adminComment`.
 
-`GET /api/locations/autocomplete` and `GET /api/locations/place-detail` proxy map/location queries through the backend (Geoapify by default, switchable to Goong) so provider API keys remain secret:
+`GET /api/locations/autocomplete` and `GET /api/locations/place-detail` proxy map/location queries through the backend (Geoapify) so provider API keys remain secret:
 - Requires authentication (`Bearer`).
 - Enforces per-user rate limiting (30 requests/minute via `LocationPolicy`, returning `429 Too Many Requests`).
 - Results are cached in memory for 5 minutes.
