@@ -5,7 +5,7 @@
 Create `.env` from `.env.example`, then set a strong SQL Server password:
 
 ```env
-MSSQL_SA_PASSWORD=StealDeal@12345
+MSSQL_SA_PASSWORD=<YOUR_MSSQL_SA_PASSWORD>
 ```
 
 On a new Docker volume, create schema first:

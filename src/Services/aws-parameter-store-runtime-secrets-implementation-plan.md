@@ -1,72 +1,416 @@
-# AWS Parameter Store Runtime Secrets Implementation Plan
+# AWS Parameter Store Runtime Secrets — Implementation Runbook
 
 ## 1. Mục tiêu
 
-Đưa các secret/config nhạy cảm của backend lên AWS Parameter Store và inject vào container khi deploy trên EC2, không commit secret vào Git và không đóng gói secret vào Docker image.
+Đưa secret của backend lên AWS Systems Manager Parameter Store và inject vào container khi deploy trên EC2.
 
-Phạm vi configuration section của application:
+Mục tiêu cuối cùng:
 
-- `Aws`
-- `Brevo`
-- `Geoapify`
-- `VnPay`
-- `Jwt`
+- Secret không còn nằm trong source code, `appsettings.json`, `.env.example`, Dockerfile, image hoặc GitHub Actions.
+- EC2 lấy secret bằng Instance IAM Role.
+- Secret được materialize thành `/opt/stealdeal/config/backend.env` với permission `600`.
+- Docker Compose truyền secret vào đúng section của ASP.NET Core.
+- Có thể refresh secret và recreate đúng service mà không cần build image mới.
 
-`Goong` không còn được sử dụng và không thuộc phạm vi triển khai này.
-
-## 2. Quyết định kiến trúc
-
-### 2.1. Secret store
-
-Sử dụng AWS Systems Manager Parameter Store tại Region `us-east-1`.
-
-Mỗi secret được lưu dưới dạng `SecureString`, tier `Standard`.
-
-Application không tự gọi Parameter Store. Flow runtime là:
+Flow runtime:
 
 ```text
 AWS Parameter Store
-        |
-        v
-EC2 IAM Role
-        |
-        v
-SSM Run Command / deployment script
-        |
-        v
-/opt/stealdeal/config/backend.env
-        |
-        v
-docker compose --env-file ...
-        |
-        v
-Container environment variables
-        |
-        v
-ASP.NET Core IConfiguration
+    -> EC2 Instance Role
+    -> sync-backend-secrets.sh
+    -> /opt/stealdeal/config/backend.env
+    -> Docker Compose
+    -> Container environment variables
+    -> ASP.NET Core IConfiguration
 ```
 
-Ưu điểm của flow này:
+Application không cần AWS SDK hoặc Parameter Store configuration provider. ASP.NET Core tự đọc environment variables; `Jwt__Secret` được map thành `Jwt:Secret`.
 
-- Không cần thêm AWS SDK hoặc Parameter Store provider vào application.
-- Không đưa secret vào Dockerfile, image hoặc ECR.
-- Không truyền giá trị secret qua GitHub Actions.
-- Local vẫn có thể dùng .NET User Secrets.
-- EC2 chỉ cần lấy secret khi deploy hoặc khi chủ động refresh secret.
+Tài liệu Microsoft: <https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/index?tabs=basicconfiguration>
 
-### 2.2. S3 trong giai đoạn hiện tại
+## 2. Hiện trạng repository cần xử lý trước
 
-Giữ nguyên cách xác thực S3 bằng `AccessKeyId` và `SecretAccessKey` vì bucket hiện đang ở account khác. Hai giá trị này sẽ được lưu trong Parameter Store.
+Các file liên quan:
 
-Chưa refactor S3 sang EC2 IAM Role trong phase này.
+- Compose: `src/Services/docker-compose.yml`
+- Backend CD: `.github/workflows/cd.yml`
+- Backend CI: `.github/workflows/ci.yml`
+- Runtime plan này: `src/Services/aws-parameter-store-runtime-secrets-implementation-plan.md`
 
-Phase migrate S3 sang bucket cùng account/Region và IAM Role sẽ được thực hiện riêng sau khi toàn bộ runtime secret flow ổn định.
+Hiện tại:
 
-## 3. Phân loại configuration
+- Compose chưa inject `Jwt`, `Aws`, `Brevo`, `Geoapify`, `VnPay` secret.
+- Các API đang hard-code `ASPNETCORE_ENVIRONMENT: Development`.
+- `Payment/appsettings.json` đang có giá trị ở `VnPay.TmnCode` và `VnPay.HashSecret`; nếu đây là credential thật thì phải rotate.
+- `.env.example` có các giá trị không rỗng; phải thay bằng placeholder hoặc để trống.
+- `.env` thật được ignore bởi `.gitignore`; file này chỉ được dùng local/giữ image tag trên EC2, không chứa production secret.
+- CD hiện chưa truyền runtime env file cho mọi lệnh Compose.
 
-### 3.1. Secret cần lưu trong Parameter Store
+## 3. Quyết định kiến trúc
 
-Đề xuất parameter path:
+### 3.1. Parameter Store
+
+- Region: `us-east-1`.
+- Type: `SecureString`.
+- Tier: `Standard`.
+- Phase đầu dùng AWS-managed key `aws/ssm` để giảm operational overhead.
+- Không cho EC2 quyền `PutParameter` hoặc `DeleteParameter`.
+
+### 3.2. S3 cross-account
+
+Giữ nguyên `Aws__AccessKeyId` và `Aws__SecretAccessKey` trong phase này vì bucket đang ở account khác. S3 IAM Role migration là phase riêng sau khi runtime secret flow ổn định.
+
+### 3.3. Hai env file trên EC2
+
+Repository hiện dùng `.env` để giữ image tag. Vì vậy production phải dùng cả hai file, theo đúng thứ tự:
+
+```bash
+docker compose \
+  --env-file .env \
+  --env-file /opt/stealdeal/config/backend.env \
+  ...
+```
+
+`backend.env` đứng sau để override secret và `ASPNETCORE_ENVIRONMENT=Production`; `.env` vẫn cung cấp image tag. Docker Compose đọc nhiều env file theo thứ tự và file sau override file trước.
+
+Tài liệu Docker: <https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/>
+
+## 4. Thứ tự implementation bắt buộc
+
+Thực hiện theo thứ tự dưới đây. Chỉ sang bước kế tiếp khi tiêu chí `Done` của bước hiện tại đạt.
+
+- [x] Step 1 — Làm sạch repository và chuyển credential hiện tại sang local `.env`.
+- [x] Step 2 — Viết script đồng bộ secret.
+- [x] Step 3 — Sửa Docker Compose.
+- [x] Step 4 — Cập nhật CI validation.
+- [ ] Step 5 — Cập nhật CD và secret-only deployment.
+- [ ] Step 6 — Cấp IAM cho EC2.
+- [ ] Step 7 — Tạo Parameter Store parameters.
+- [ ] Step 8 — Bootstrap script trên EC2.
+- [ ] Step 9 — Deploy lần đầu.
+- [ ] Step 10 — Kiểm thử business flow.
+- [ ] Step 11 — Kiểm thử rotation, rollback và secret-only refresh.
+
+Quyết định hiện tại: tiếp tục dùng credential hiện có, không rotate trong phase implementation này.
+
+## 5. Step 1 — Làm sạch repository và credential
+
+**Trạng thái: đã implement ngày 2026-10-26 trong phạm vi đã thống nhất.**
+
+### 5.1. Xóa secret khỏi application configuration
+
+Trong tất cả `appsettings.json`, giữ placeholder hoặc chuỗi rỗng cho:
+
+```json
+"Jwt": { "Secret": "" }
+"Aws": { "AccessKeyId": "", "SecretAccessKey": "" }
+"Brevo": { "ApiKey": "" }
+"Geoapify": { "ApiKey": "" }
+"VnPay": { "TmnCode": "", "HashSecret": "" }
+```
+
+Không xóa các giá trị không nhạy cảm như URL, issuer, audience, timeout hoặc bucket name.
+
+### 5.2. Thiết lập local `.env`
+
+`src/Services/.env` đã được Git ignore và giữ credential hiện tại để chạy local bằng Docker Compose:
+
+```env
+ASPNETCORE_ENVIRONMENT=Development
+MSSQL_SA_PASSWORD=
+JWT_SECRET=
+AWS_ACCESS_KEY=
+AWS_SECRET_KEY=
+BREVO_API_KEY=
+GEOAPIFY_API_KEY=
+VNPAY_TMN_CODE=
+VNPAY_HASH_SECRET=
+```
+
+Không commit file `.env`. `.env.example` được giữ nguyên theo quyết định hiện tại và không thuộc phạm vi Step 1.
+
+Giá trị AWS và Brevo được copy từ .NET User Secrets hiện có; các User Secrets cũ vẫn được giữ. JWT chung được chuyển từ sáu `appsettings.json` sang `.env`. Geoapify đã được bổ sung vào local `.env`.
+
+Compose local map toàn bộ secret vào đúng service và dùng fail-fast cho tất cả biến bắt buộc.
+
+Ví dụ Payment:
+
+```yaml
+VnPay__TmnCode: ${VNPAY_TMN_CODE:?VNPAY_TMN_CODE is required}
+VnPay__HashSecret: ${VNPAY_HASH_SECRET:?VNPAY_HASH_SECRET is required}
+```
+
+Chạy local bằng Docker Compose từ `src/Services` để Compose tự đọc `.env`:
+
+```bash
+docker compose up
+```
+
+`dotnet run` trực tiếp không tự đọc file `.env`; nếu chạy service trực tiếp thì export biến vào shell hoặc dùng .NET User Secrets.
+
+### 5.3. Quyết định về rotation
+
+Không rotate credential trong phase này. Mục tiêu của Step 1 là loại secret khỏi snapshot Git ở commit tiếp theo và tiếp tục dùng giá trị hiện tại từ `.env`.
+
+Lưu ý: secret từng commit vẫn tồn tại trong Git history. Đây là rủi ro được chấp nhận cho phase hiện tại; việc rotate hoặc rewrite history chỉ thực hiện khi có quyết định riêng.
+
+### 5.4. Done criteria
+
+- [x] `Jwt.Secret` trong cả sáu API và VNPAY secret trong Payment đã rỗng ở file tracked.
+- [x] JWT, AWS, Brevo, Geoapify, VNPAY và MSSQL tồn tại trong local `.env` bị Git ignore.
+- [x] Database README đã thay password thật bằng placeholder.
+- [x] Compose local inject secret vào đúng sáu API.
+- [x] CI dùng dummy values, không dùng local hoặc production secret.
+- [x] `.env.example` được giữ nguyên và loại khỏi phạm vi cleanup theo quyết định hiện tại.
+
+## 6. Step 2 — Viết `sync-backend-secrets.sh`
+
+**Trạng thái: đã implement ngày 2026-10-26; kiểm thử tích hợp với AWS/EC2 thực tế chờ Step 6–8.**
+
+Tạo script không chứa secret tại:
+
+```text
+src/Services/deployment/sync-backend-secrets.sh
+```
+
+Khi bootstrap, copy script tới:
+
+```text
+/opt/stealdeal/scripts/sync-backend-secrets.sh
+```
+
+### 6.1. Hành vi bắt buộc của script
+
+Script phải:
+
+1. Dùng `#!/usr/bin/env bash`, `set -Eeuo pipefail`, `umask 077`.
+2. Dùng `flock` để tránh hai deployment ghi file đồng thời.
+3. Kiểm tra `aws` và `jq` đã cài.
+4. Gọi `aws ssm get-parameters-by-path` với:
+   - `--region us-east-1`
+   - `--path /stealdeal/prod`
+   - `--recursive`
+   - `--with-decryption`
+   - không dùng `--no-paginate`.
+5. Lấy đúng tám leaf name sau:
+
+```text
+JWT_SECRET
+AWS_ACCESS_KEY
+AWS_SECRET_KEY
+BREVO_API_KEY
+GEOAPIFY_API_KEY
+VNPAY_TMN_CODE
+VNPAY_HASH_SECRET
+MSSQL_SA_PASSWORD
+```
+
+6. Fail nếu thiếu key hoặc key có giá trị rỗng.
+7. Reject giá trị chứa NUL, CR hoặc LF.
+8. Ghi file tạm cùng filesystem với file đích.
+9. Ghi thêm `ASPNETCORE_ENVIRONMENT=Production`.
+10. Set owner `root:root`, mode `600`.
+11. Replace file chính bằng `mv` atomic.
+12. Chỉ in trạng thái thành công hoặc lỗi tổng quát; không in parameter value, JSON hoặc toàn bộ environment.
+
+### 6.2. Done criteria
+
+- [x] Script có Bash syntax hợp lệ.
+- [x] Script kiểm tra đúng tám required `SecureString`.
+- [x] Script reject parameter thiếu, dư, rỗng, chỉ có whitespace hoặc chứa NUL/CR/LF.
+- [x] Script dùng `flock`, temporary file cùng filesystem và `mv` atomic.
+- [x] Script ghi `ASPNETCORE_ENVIRONMENT=Production`, owner `root:root`, mode `600`.
+- [x] Script không dùng `set -x` và không truyền secret qua command arguments/log.
+- [ ] Chạy nhiều lần liên tiếp trên EC2 thật sau khi hoàn thành Parameter Store và IAM.
+- [ ] Xác nhận file runtime cũ được giữ nguyên khi AWS call/validation thất bại trên EC2.
+
+## 7. Step 3 — Sửa Docker Compose
+
+**Trạng thái: đã implement và validate ngày 2026-10-26.**
+
+### 7.1. Environment mode
+
+Đổi trên sáu API:
+
+```yaml
+ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+```
+
+Local mặc định là `Development`; runtime file trên EC2 sẽ đặt `Production`.
+
+### 7.2. Mapping configuration
+
+| Service | Environment variables |
+|---|---|
+| `identity-api` | `Jwt__Secret`, `Aws__AccessKeyId`, `Aws__SecretAccessKey` |
+| `notification-api` | `Jwt__Secret`, `Brevo__ApiKey` |
+| `store-api` | `Jwt__Secret`, `Aws__AccessKeyId`, `Aws__SecretAccessKey`, `Geoapify__ApiKey` |
+| `cart-api` | `Jwt__Secret` |
+| `order-api` | `Jwt__Secret` |
+| `payment-api` | `Jwt__Secret`, `VnPay__TmnCode`, `VnPay__HashSecret` |
+
+Không map `Goong__ApiKey`.
+
+### 7.3. Fail-fast interpolation
+
+Dùng syntax bắt buộc cho toàn bộ secret:
+
+```yaml
+Jwt__Secret: ${JWT_SECRET:?JWT_SECRET is required}
+Brevo__ApiKey: ${BREVO_API_KEY:?BREVO_API_KEY is required}
+```
+
+Áp dụng tương tự cho AWS, Geoapify, VNPAY và MSSQL.
+
+### 7.4. Done criteria
+
+- [x] Local Compose resolve `Development` cho cả sáu API.
+- [x] Production simulation resolve `Production` cho cả sáu API.
+- [x] `docker compose ... config --quiet` thành công khi đủ biến.
+- [x] Compose trả exit code khác `0` khi thiếu required secret.
+- [x] Sáu service nhận đúng configuration section.
+- [x] MSSQL fail-fast tại SQL Server, migrator và năm connection string.
+- [x] Compose không map `Goong__ApiKey`.
+
+## 8. Step 4 — Cập nhật CI validation
+
+**Trạng thái: đã implement và validate ngày 2026-10-26.**
+
+Trong `.github/workflows/ci.yml`:
+
+1. Tạo temporary env file chỉ dùng dummy values và `ASPNETCORE_ENVIRONMENT=Production`.
+2. Bổ sung toàn bộ tám biến bắt buộc vào file đó.
+3. Đặt `umask 077`, permission `600` và cleanup file bằng `trap`.
+4. Chạy:
+
+```bash
+docker compose \
+  --env-file "$CI_ENV_FILE" \
+  -f src/Services/docker-compose.yml \
+  config --quiet
+```
+
+5. Tạo file thứ hai cố tình thiếu `JWT_SECRET` và xác nhận Compose phải fail.
+6. Không dùng secret production.
+7. Không in resolved Compose config ra log.
+
+### Done criteria
+
+- [x] Bash syntax của validation step hợp lệ.
+- [x] CI cung cấp đủ `8/8` required variables bằng dummy values.
+- [x] Compose config pass với file đầy đủ.
+- [x] Compose config fail khi thiếu `JWT_SECRET`.
+- [x] Temporary files được cleanup dù step thành công hay thất bại.
+
+## 9. Step 5 — Cập nhật CD
+
+### 9.1. Luồng deploy mới
+
+Mọi backend CD phải chạy:
+
+```text
+sync-backend-secrets.sh
+→ docker compose config --quiet
+→ ECR login nếu deploy image
+→ pull image nếu deploy image
+→ database migrator nếu được yêu cầu
+→ recreate service
+→ health check
+```
+
+Mọi lệnh Compose trong CD phải dùng:
+
+```bash
+--env-file .env --env-file /opt/stealdeal/config/backend.env
+```
+
+### 9.2. Manual secret-only deployment
+
+Thêm workflow input:
+
+```yaml
+refresh_secrets:
+  description: Sync secrets and recreate selected services
+  required: true
+  default: false
+  type: boolean
+```
+
+Khi `refresh_secrets=true`:
+
+- `image_sha` không bắt buộc.
+- Không login ECR.
+- Không pull image.
+- Không build image.
+- Không chạy migrator.
+- Chỉ sync secret và recreate service được chọn.
+
+### 9.3. Mapping refresh
+
+| Parameter thay đổi | Service cần recreate |
+|---|---|
+| `JWT_SECRET` | Tất cả API |
+| `AWS_ACCESS_KEY`, `AWS_SECRET_KEY` | `identity-api`, `store-api` |
+| `BREVO_API_KEY` | `notification-api` |
+| `GEOAPIFY_API_KEY` | `store-api` |
+| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | `payment-api` |
+| `MSSQL_SA_PASSWORD` | Quy trình SQL đặc biệt ở Step 11 |
+
+Không dùng `set -x`. Không chạy `docker compose config` không có `--quiet`.
+
+### 9.4. Done criteria
+
+- Automatic CD sync secret trước Compose.
+- Manual secret-only deployment chạy được mà không cần image mới.
+- CD không truyền runtime secret qua GitHub Actions.
+
+## 10. Step 6 — IAM cho EC2
+
+### 10.1. EC2 runtime policy
+
+Gắn policy tối thiểu vào role đang attach với EC2:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadStealDealProdParameters",
+      "Effect": "Allow",
+      "Action": "ssm:GetParametersByPath",
+      "Resource": "arn:aws:ssm:us-east-1:<ACCOUNT_ID>:parameter/stealdeal/prod/*"
+    }
+  ]
+}
+```
+
+Không cấp `ssm:PutParameter`, `ssm:DeleteParameter` hoặc `ssm:DeleteParameters` cho EC2 runtime role.
+
+Nếu dùng customer-managed KMS key, thêm `kms:Decrypt` chỉ cho key đó.
+
+### 10.2. Admin/deployment bootstrap policy
+
+User hoặc role dùng để tạo/cập nhật parameter cần:
+
+```text
+ssm:PutParameter
+ssm:DeleteParameter
+ssm:GetParameter
+ssm:GetParameters
+ssm:GetParametersByPath
+```
+
+Nếu quản lý tags bằng IAM, thêm quyền tag tương ứng.
+
+### 10.3. Done criteria
+
+- EC2 đọc được path `/stealdeal/prod`.
+- EC2 không ghi/xóa được parameter.
+- Policy resource bị giới hạn ở `arn:aws:ssm:us-east-1:<ACCOUNT_ID>:parameter/stealdeal/prod/*`.
+
+## 11. Step 7 — Tạo Parameter Store parameters
+
+Tại Region `us-east-1`, tạo tám parameter sau:
 
 ```text
 /stealdeal/prod/JWT_SECRET
@@ -79,356 +423,207 @@ Phase migrate S3 sang bucket cùng account/Region và IAM Role sẽ được th�
 /stealdeal/prod/MSSQL_SA_PASSWORD
 ```
 
-`MSSQL_SA_PASSWORD` đã được sử dụng bởi Compose hiện tại; parameter này được giữ lại trong cùng runtime env file.
+Mỗi parameter phải có:
 
-### 3.2. Configuration không nhạy cảm
+- Type: `SecureString`.
+- Tier: `Standard`.
+- Tags: `Application=stealdeal`, `Environment=prod`, `ManagedBy=parameter-store`.
 
-Các giá trị không nhạy cảm có thể tiếp tục nằm trong `appsettings.json` hoặc Compose:
+Với `MSSQL_SA_PASSWORD`, lần đầu phải dùng password `sa` đang thực sự hoạt động với SQL volume hiện tại.
 
-```text
-Aws__Region
-Aws__PublicBucketName
-Brevo__BaseUrl
-Brevo__FromEmail
-Brevo__FromName
-Geoapify__BaseUrl
-Geoapify__TimeoutSeconds
-Geoapify__CacheMinutes
-VnPay__PaymentUrl
-VnPay__ReturnUrl
-VnPay__IpnUrl
-VnPay__Version
-VnPay__Command
-VnPay__CurrCode
-VnPay__Locale
-VnPay__ExpireMinutes
-Jwt__Issuer
-Jwt__Audience
-Jwt__AccessTokenMinutes
-Jwt__RefreshTokenDays
+Không dùng lệnh `echo` hoặc command line có plaintext secret trong shell history.
+
+### Done criteria
+
+Có đủ tám parameter, đúng Region, đúng type, đúng tags và không có giá trị nào đi qua GitHub Actions log.
+
+## 12. Step 8 — Bootstrap trên EC2
+
+### 12.1. Tạo thư mục
+
+```bash
+sudo install -d -o root -g root -m 700 /opt/stealdeal/config
+sudo install -d -o root -g root -m 700 /opt/stealdeal/scripts
 ```
 
-Nếu muốn tách hoàn toàn production configuration khỏi repository, các giá trị này có thể đưa vào Parameter Store dạng `String` ở phase sau. Không cần thiết cho phase đầu.
+### 12.2. Cài script
 
-## 4. Mapping giữa Parameter Store, env file và .NET configuration
-
-Runtime file `/opt/stealdeal/config/backend.env` sử dụng tên biến trung gian:
-
-```env
-JWT_SECRET=...
-AWS_ACCESS_KEY=...
-AWS_SECRET_KEY=...
-BREVO_API_KEY=...
-GEOAPIFY_API_KEY=...
-VNPAY_TMN_CODE=...
-VNPAY_HASH_SECRET=...
-MSSQL_SA_PASSWORD=...
+```bash
+sudo install -o root -g root -m 700 \
+  sync-backend-secrets.sh \
+  /opt/stealdeal/scripts/sync-backend-secrets.sh
 ```
 
-Docker Compose map chúng vào đúng section của ASP.NET Core:
+EC2 cần có `aws`, `jq`, `flock`, Docker và Docker Compose plugin.
 
-```yaml
-identity-api:
-  environment:
-    Jwt__Secret: ${JWT_SECRET}
-    Aws__AccessKeyId: ${AWS_ACCESS_KEY}
-    Aws__SecretAccessKey: ${AWS_SECRET_KEY}
+### 12.3. Test IAM không làm lộ secret
 
-notification-api:
-  environment:
-    Jwt__Secret: ${JWT_SECRET}
-    Brevo__ApiKey: ${BREVO_API_KEY}
-
-store-api:
-  environment:
-    Jwt__Secret: ${JWT_SECRET}
-    Aws__AccessKeyId: ${AWS_ACCESS_KEY}
-    Aws__SecretAccessKey: ${AWS_SECRET_KEY}
-    Geoapify__ApiKey: ${GEOAPIFY_API_KEY}
-
-payment-api:
-  environment:
-    Jwt__Secret: ${JWT_SECRET}
-    VnPay__TmnCode: ${VNPAY_TMN_CODE}
-    VnPay__HashSecret: ${VNPAY_HASH_SECRET}
+```bash
+aws ssm get-parameters-by-path \
+  --region us-east-1 \
+  --path /stealdeal/prod \
+  --recursive \
+  --with-decryption \
+  --query 'length(Parameters)' \
+  --output text
 ```
 
-`cart-api` và `order-api` cũng cần nhận `Jwt__Secret` vì chúng dùng JWT validation.
+Kết quả mong đợi: `8`.
 
-Không map `Goong__ApiKey` vì Goong không còn được sử dụng.
+### 12.4. Chạy sync và kiểm tra permission
 
-## 5. IAM implementation
-
-### 5.1. EC2 instance role
-
-Bổ sung quyền tối thiểu cho role đang gắn với EC2:
-
-```text
-ssm:GetParametersByPath
+```bash
+sudo /opt/stealdeal/scripts/sync-backend-secrets.sh
+sudo stat -c '%U %G %a' /opt/stealdeal/config/backend.env
 ```
 
-Resource chỉ giới hạn ở:
+Kết quả mong đợi: `root root 600`.
 
-```text
-arn:aws:ssm:us-east-1:<account-id>:parameter/stealdeal/prod/*
+Không chạy `cat backend.env`, `printenv` hoặc `docker inspect` theo cách in toàn bộ environment.
+
+### Done criteria
+
+- File runtime nằm ngoài Git checkout.
+- File thuộc `root:root`, mode `600`.
+- Script sync thành công và không in secret.
+
+## 13. Step 9 — Deploy lần đầu
+
+Tại thư mục Compose trên EC2:
+
+```bash
+docker compose \
+  --env-file .env \
+  --env-file /opt/stealdeal/config/backend.env \
+  config --quiet
 ```
 
-Nếu dùng customer-managed KMS key thì bổ sung `kms:Decrypt` cho đúng key. Phase đầu có thể dùng AWS managed key của Parameter Store để giảm operational overhead.
+Sau đó thực hiện theo thứ tự:
 
-### 5.2. Quyền của người tạo/cập nhật parameter
+1. ECR login.
+2. Pull image.
+3. Start `sqlserver`, `rabbitmq`, `redis`.
+4. Chạy database migrator nếu cần.
+5. Recreate API services.
+6. Kiểm tra `docker compose ps`.
+7. Kiểm tra health endpoint qua nginx/backend.
 
-Người quản trị/deployment bootstrap cần quyền:
+Không xóa volume `sqlserver-data`.
 
-```text
-ssm:PutParameter
-ssm:DeleteParameter
-ssm:GetParameter
-ssm:GetParameters
-```
+### Done criteria
 
-Các quyền ghi parameter không cần cấp cho EC2 runtime role.
+- Compose config pass không warning missing variable.
+- Sáu API running.
+- Database migrator kết nối được SQL Server.
+- Deploy source/compose không xóa `/opt/stealdeal/config/backend.env`.
 
-## 6. Bootstrap Parameter Store
+## 14. Step 10 — Kiểm thử application
 
-Thực hiện một lần bằng AWS Console hoặc AWS CLI từ máy quản trị:
+Thực hiện các test sau:
 
-1. Tạo các parameter theo danh sách ở mục 3.1.
-2. Chọn type `SecureString`.
-3. Chọn Region `us-east-1`.
-4. Gán tag, ví dụ:
+1. Login và nhận JWT.
+2. Refresh token.
+3. Dùng JWT gọi Cart, Order, Store và Payment.
+4. Trigger gửi email qua Brevo.
+5. Tìm địa chỉ bằng Geoapify.
+6. Tạo VNPAY checkout URL.
+7. Kiểm tra VNPAY return/IPN qua HTTPS.
+8. Upload ảnh lên S3 cross-account.
+9. Chạy database migration.
 
-```text
-Application=stealdeal
-Environment=prod
-ManagedBy=parameter-store
-```
+JWT secret phải giống nhau trên cả sáu API.
 
-5. Xác nhận EC2 role đọc được parameter mà không làm lộ giá trị trong terminal/log.
+### Done criteria
 
-Không commit giá trị thật vào `.env.example`, `appsettings.json`, GitHub workflow hoặc tài liệu.
+JWT, Brevo, Geoapify, VNPAY, S3 và database đều hoạt động trên EC2.
 
-## 7. Runtime secret synchronization trên EC2
+## 15. Step 11 — Secret rotation và rollback
 
-Tạo một script runtime, ví dụ:
+### 15.1. Rotation thông thường
 
-```text
-/opt/stealdeal/scripts/sync-backend-secrets.sh
-```
+1. Giữ credential cũ hoạt động.
+2. Tạo credential mới ở provider.
+3. Update parameter trong Parameter Store.
+4. Chạy sync script.
+5. Recreate các service bị ảnh hưởng.
+6. Test flow liên quan.
+7. Nếu đây là một đợt rotation, revoke credential cũ sau khi xác nhận thành công.
+8. Nếu thất bại, restore parameter cũ và recreate lại service.
 
-Script cần:
+### 15.2. JWT rotation
 
-1. Gọi `aws ssm get-parameters-by-path` với `--with-decryption`.
-2. Lấy path `/stealdeal/prod`.
-3. Convert parameter name thành biến trong `backend.env`.
-4. Ghi file tạm ở cùng filesystem.
-5. Validate các key bắt buộc không rỗng.
-6. Set owner/permission:
+JWT rotation sẽ invalidate token đang tồn tại. Thực hiện trong maintenance window và kiểm tra login/refresh sau deploy.
 
-```text
-owner: root
-mode: 600
-```
+### 15.3. MSSQL password rotation
 
-7. Replace file chính bằng thao tác atomic.
-8. Không in secret ra stdout, SSM output hoặc GitHub Actions log.
+Không chỉ update `MSSQL_SA_PASSWORD` trong Parameter Store. Với SQL volume cũ, SQL Server có thể bỏ qua environment value mới.
 
-File runtime phải nằm ngoài Git checkout:
+Quy trình:
 
-```text
-/opt/stealdeal/config/backend.env
-```
+1. Backup database.
+2. Dùng `ALTER LOGIN sa WITH PASSWORD=...` để đổi password thật trong SQL Server.
+3. Update `/stealdeal/prod/MSSQL_SA_PASSWORD` ngay sau đó.
+4. Sync `backend.env`.
+5. Recreate các service dùng database và migrator.
+6. Kiểm tra migration và API health.
 
-## 8. Thay đổi docker-compose.yml
+Microsoft reference: <https://learn.microsoft.com/en-us/sql/linux/containers/troubleshoot?view=sql-server-ver16>
 
-### 8.1. Runtime environment
+### Done criteria
 
-Thêm các mapping vào đúng service sử dụng configuration section tương ứng.
+- Secret-only refresh chạy được.
+- Rollback parameter cũ chạy được.
+- Image rollback không làm mất runtime env file.
+- Nếu có rotation, credential cũ đã được revoke sau khi verification hoàn tất.
 
-Các service cần `Jwt__Secret`:
+## 16. Validation checklist cuối cùng
 
-```text
-identity-api
-notification-api
-store-api
-cart-api
-order-api
-payment-api
-```
+### Parameter Store và IAM
 
-Các service cần secret riêng:
+- [ ] Tất cả parameter ở `us-east-1`.
+- [ ] Tất cả dùng `SecureString`, tier `Standard`.
+- [ ] EC2 role chỉ đọc đúng path.
+- [ ] EC2 role không có quyền Put/Delete.
+- [ ] Không có plaintext secret trong SSM output/log.
 
-```text
-identity-api: Aws
-notification-api: Brevo
-store-api: Aws, Geoapify
-payment-api: VnPay
-```
+### Runtime và Compose
 
-### 8.2. Required variable validation
-
-Các secret bắt buộc nên dùng syntax fail-fast của Compose khi phù hợp:
-
-```yaml
-Brevo__ApiKey: ${BREVO_API_KEY:?BREVO_API_KEY is required}
-```
-
-Không để container khởi động với secret rỗng rồi chỉ phát hiện lỗi khi có request thật.
-
-### 8.3. Production environment
-
-Compose trên EC2 nên dùng:
-
-```yaml
-ASPNETCORE_ENVIRONMENT: Production
-```
-
-Local có thể override thành `Development` trong file env local.
-
-Production container không phụ thuộc vào .NET User Secrets trên máy developer.
-
-## 9. Thay đổi CI/CD
-
-### 9.1. Không đưa secret vào CI
-
-GitHub Actions chỉ gửi SSM command. Secret được EC2 lấy trực tiếp bằng instance role.
-
-Không thêm API key của Brevo, VNPAY, Geoapify hoặc S3 vào GitHub Secrets trừ khi có mục đích khác rõ ràng.
-
-### 9.2. Backend CD flow mới
-
-Thứ tự đề xuất:
-
-```text
-SSM command bắt đầu
-    -> sync-backend-secrets.sh
-    -> cd tới Compose directory
-    -> docker compose --env-file /opt/stealdeal/config/backend.env config --quiet
-    -> ECR login
-    -> pull image
-    -> recreate service cần deploy
-    -> health check
-```
-
-Tất cả lệnh `docker compose` trong CD phải dùng cùng runtime env file, gồm:
-
-- `config`
-- `pull`
-- database migrator
-- `up`
-- `ps`
-
-### 9.3. Secret-only deployment
-
-Thêm manual deployment option:
-
-```text
-refresh_secrets: true/false
-services: all hoặc danh sách service
-```
-
-Khi chỉ thay secret:
-
-1. Sync Parameter Store.
-2. Recreate các service bị ảnh hưởng.
-3. Không cần build/push image mới.
-
-Mapping service khi refresh:
-
-```text
-JWT_SECRET       -> tất cả API
-AWS_*            -> identity-api, store-api
-BREVO_API_KEY    -> notification-api
-GEOAPIFY_API_KEY -> store-api
-VNPAY_*          -> payment-api
-```
-
-## 10. S3 cross-account phase hiện tại
-
-Giữ nguyên:
-
-```text
-Aws__AccessKeyId
-Aws__SecretAccessKey
-```
-
-Các key này được inject từ Parameter Store trên EC2 và User Secrets khi chạy local.
-
-Kiểm tra thêm:
-
-- IAM user của account chứa bucket chỉ có quyền cần thiết trên bucket/object.
-- Bucket policy cho phép đúng principal.
-- Access key có giới hạn scope, không dùng root credential.
-- Region thực tế của bucket.
-- Nếu bucket khác Region với EC2, đánh giá chi phí cross-region transfer.
-
-Account khác không tự động có nghĩa là bị tính phí transfer. Điều quan trọng là Region của EC2 và S3.
-
-## 11. S3 migration phase sau
-
-Chỉ thực hiện sau khi Parameter Store/runtime secret flow ổn định:
-
-1. Tạo bucket mới trong account phù hợp và Region phù hợp.
-2. Copy/migrate object và kiểm tra URL public.
-3. Cấu hình bucket policy/IAM role cho EC2.
-4. Sửa `S3StorageService` để dùng AWS SDK default credential chain thay vì `BasicAWSCredentials`.
-5. Local dùng AWS profile hoặc User Secrets tùy môi trường.
-6. Xóa `AccessKeyId` và `SecretAccessKey` khỏi application configuration.
-7. Thu hồi access key cross-account cũ sau khi verify hoàn tất.
-
-Việc đổi bucket không bắt buộc thay đổi application code nếu vẫn dùng static key. Thay đổi code chỉ cần thiết khi chuyển sang IAM Role/default credential chain.
-
-## 12. Security cleanup trước khi triển khai
-
-1. Xóa secret thật khỏi `appsettings.json`.
-2. Nếu VNPAY hash secret hoặc credential đã từng commit và là credential thật, rotate credential trước khi dùng production.
-3. Chỉ để placeholder trong `appsettings.json`.
-4. Kiểm tra `.gitignore` không cho phép commit `.env`.
-5. Không chạy lệnh in toàn bộ environment trong CI/CD.
-6. Không dùng `docker compose config` theo cách làm lộ resolved secret ra log.
-7. Không để secret xuất hiện trong exception message hoặc application log.
-
-## 13. Validation checklist
-
-### Parameter Store/IAM
-
-- [ ] Parameters nằm ở `us-east-1`.
-- [ ] Parameters dùng `SecureString` Standard.
-- [ ] EC2 role đọc được đúng path.
-- [ ] EC2 role không có quyền Put/Delete parameter.
-- [ ] Không có secret trong SSM output.
-
-### Compose/runtime
-
-- [ ] `/opt/stealdeal/config/backend.env` tồn tại trên EC2.
-- [ ] File có permission `600`.
-- [ ] `docker compose --env-file ... config --quiet` thành công.
-- [ ] Không còn warning thiếu biến bắt buộc.
+- [ ] `/opt/stealdeal/config/backend.env` tồn tại.
+- [ ] File có owner `root:root`, mode `600`.
+- [ ] Mọi Compose command production dùng cả `.env` và `backend.env`.
+- [ ] `docker compose config --quiet` thành công.
+- [ ] Compose fail-fast khi thiếu required secret.
 - [ ] Container được recreate sau khi secret thay đổi.
 
 ### Application
 
 - [ ] JWT login/refresh hoạt động.
 - [ ] Brevo gửi email thành công.
-- [ ] Geoapify tìm kiếm địa chỉ thành công.
-- [ ] VNPAY tạo checkout URL thành công.
-- [ ] VNPAY return/IPN qua HTTPS hoạt động.
-- [ ] Upload ảnh lên S3 cross-account hoạt động.
+- [ ] Geoapify tìm kiếm thành công.
+- [ ] VNPAY checkout/return/IPN hoạt động.
+- [ ] S3 upload cross-account hoạt động.
+- [ ] Database migrator hoạt động.
 
-### Deployment/rollback
+### Deployment và rollback
 
-- [ ] Deploy source code không xóa runtime env file.
-- [ ] Deploy compose config không xóa runtime env file.
+- [ ] Deploy source không xóa runtime env file.
+- [ ] Deploy compose không xóa runtime env file.
 - [ ] Secret-only refresh không cần build image.
 - [ ] Rollback image không làm mất secret.
-- [ ] Có thể khôi phục parameter cũ khi rotate lỗi.
+- [ ] Có thể restore parameter cũ khi rotation lỗi.
 
-## 14. Tiêu chí hoàn thành
+## 17. Tiêu chí hoàn thành plan
 
-Implementation được xem là hoàn thành khi:
+Plan hoàn thành khi đồng thời đạt tất cả điều kiện:
 
 1. Không còn secret thật trong application source/config.
 2. EC2 tự lấy secret bằng IAM Role.
-3. CD không truyền secret qua GitHub Actions.
+3. CD không truyền runtime secret qua GitHub Actions.
 4. Tất cả service nhận đúng configuration section.
-5. Secret refresh có thể recreate đúng service mà không build image.
-6. Các flow JWT, Brevo, Geoapify, VNPAY và S3 cross-account chạy thành công trên EC2.
+5. Secret refresh recreate đúng service mà không build image.
+6. JWT, Brevo, Geoapify, VNPAY và S3 cross-account chạy thành công trên EC2.
+7. Rotation và rollback đã được kiểm thử.
+
+## 18. Việc ngoài phạm vi secret flow cần xác nhận
+
+`docker-compose.yml` hiện dùng `MSSQL_PID: Developer`. Nếu đây là production thương mại, cần xác nhận license SQL Server hoặc chuyển sang edition/dịch vụ được cấp phép trước khi go-live.

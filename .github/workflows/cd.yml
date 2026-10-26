@@ -11,8 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       image_sha:
-        description: Commit SHA whose image should be deployed
-        required: true
+        description: Commit SHA whose image should be deployed (not required for secret-only refresh)
+        required: false
+        default: ""
         type: string
       services:
         description: Comma-separated services, all, or none for config-only deployment
@@ -26,6 +27,11 @@ on:
         type: boolean
       compose_changed:
         description: Fetch and apply backend deployment configuration from this commit
+        required: true
+        default: false
+        type: boolean
+      refresh_secrets:
+        description: Sync secrets and recreate selected services without deploying images
         required: true
         default: false
         type: boolean
@@ -70,6 +76,7 @@ jobs:
           SERVICES: ${{ inputs.services }}
           RUN_MIGRATOR: ${{ inputs.run_migrator }}
           COMPOSE_CHANGED: ${{ inputs.compose_changed }}
+          REFRESH_SECRETS: ${{ inputs.refresh_secrets }}
         run: |
           set -euo pipefail
 
@@ -81,19 +88,51 @@ jobs:
             api_services=$(printf '%s' "$SERVICES" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           fi
 
+          if ! jq -e '
+            all(.[]; . == "identity" or . == "notification" or . == "store" or . == "cart" or . == "order" or . == "payment")
+            and length == (unique | length)
+          ' <<< "$api_services" >/dev/null; then
+            echo '::error::services must contain unique values from: identity, notification, store, cart, order, payment'
+            exit 1
+          fi
+
+          if [[ "$REFRESH_SECRETS" == "true" && "$RUN_MIGRATOR" == "true" ]]; then
+            echo '::error::run_migrator cannot be used with refresh_secrets'
+            exit 1
+          fi
+
+          if [[ "$REFRESH_SECRETS" == "true" && "$COMPOSE_CHANGED" == "true" ]]; then
+            echo '::error::compose_changed cannot be used with refresh_secrets'
+            exit 1
+          fi
+
+          requires_sha=$(jq -nr \
+            --argjson services "$api_services" \
+            --argjson run_migrator "$RUN_MIGRATOR" \
+            --argjson compose_changed "$COMPOSE_CHANGED" \
+            --argjson refresh_secrets "$REFRESH_SECRETS" \
+            '($refresh_secrets | not) and (($services | length) > 0 or $run_migrator or $compose_changed)')
+
+          if [[ "$requires_sha" == "true" && ! "${{ inputs.image_sha }}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo '::error::image_sha must be a full 40-character commit SHA for image or configuration deployment'
+            exit 1
+          fi
+
           mkdir -p .deploy
           jq -n \
             --arg sha "${{ inputs.image_sha }}" \
             --argjson api_services "$api_services" \
             --argjson run_migrator "$RUN_MIGRATOR" \
             --argjson compose_changed "$COMPOSE_CHANGED" \
+            --argjson refresh_secrets "$REFRESH_SECRETS" \
             '{
               commit_sha: $sha,
               api_services: $api_services,
-              docker_services: $api_services,
+              docker_services: (if $refresh_secrets then [] else $api_services end),
               run_migrator: $run_migrator,
-              application_code_changed: (($api_services | length) > 0 or $run_migrator),
-              compose_changed: $compose_changed
+              application_code_changed: ((($api_services | length) > 0 or $run_migrator) and ($refresh_secrets | not)),
+              compose_changed: $compose_changed,
+              refresh_secrets: $refresh_secrets
             }' > .deploy/deployment-manifest.json
 
       - name: Configure AWS credentials
@@ -110,8 +149,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          [[ "$IMAGE_TAG" =~ ^[0-9a-fA-F]{40}$ ]]
-
           identity_image="$ECR_REGISTRY/stealdeal-identity:$IMAGE_TAG"
           notification_image="$ECR_REGISTRY/stealdeal-notification:$IMAGE_TAG"
           store_image="$ECR_REGISTRY/stealdeal-store:$IMAGE_TAG"
@@ -123,6 +160,18 @@ jobs:
           api_services=$(jq -c '.api_services' .deploy/deployment-manifest.json)
           run_migrator=$(jq -r '.run_migrator' .deploy/deployment-manifest.json)
           compose_changed=$(jq -r '.compose_changed // false' .deploy/deployment-manifest.json)
+          refresh_secrets=$(jq -r '.refresh_secrets // false' .deploy/deployment-manifest.json)
+
+          requires_sha=$(jq -nr \
+            --argjson services "$api_services" \
+            --argjson run_migrator "$run_migrator" \
+            --argjson compose_changed "$compose_changed" \
+            --argjson refresh_secrets "$refresh_secrets" \
+            '($refresh_secrets | not) and (($services | length) > 0 or $run_migrator or $compose_changed)')
+
+          if [[ "$requires_sha" == "true" ]]; then
+            [[ "$IMAGE_TAG" =~ ^[0-9a-fA-F]{40}$ ]]
+          fi
 
           commands=$(jq -cn \
             --arg repo_path "$BACKEND_REPO_PATH" \
@@ -141,6 +190,7 @@ jobs:
             --argjson api_services "$api_services" \
             --argjson run_migrator "$run_migrator" \
             --argjson compose_changed "$compose_changed" \
+            --argjson refresh_secrets "$refresh_secrets" \
             '
               def has($service): (($api_services | index($service)) != null);
               def targets: [
@@ -172,35 +222,41 @@ jobs:
                     ] else [
                       ("cd " + $path)
                     ] end)
-                  + (if has("identity") then ["export IDENTITY_IMAGE=" + $identity] else [] end)
-                  + (if has("notification") then ["export NOTIFICATION_IMAGE=" + $notification] else [] end)
-                  + (if has("store") then ["export STORE_IMAGE=" + $store] else [] end)
-                  + (if has("cart") then ["export CART_IMAGE=" + $cart] else [] end)
-                  + (if has("order") then ["export ORDER_IMAGE=" + $order] else [] end)
-                  + (if has("payment") then ["export PAYMENT_IMAGE=" + $payment] else [] end)
+                  + [
+                      "touch .env",
+                      "test -x /opt/stealdeal/scripts/sync-backend-secrets.sh",
+                      "/opt/stealdeal/scripts/sync-backend-secrets.sh",
+                      "compose() { docker compose --env-file .env --env-file /opt/stealdeal/config/backend.env \"$@\"; }",
+                      "compose config --quiet"
+                    ]
+                  + (if (has("identity") and ($refresh_secrets | not)) then ["export IDENTITY_IMAGE=" + $identity] else [] end)
+                  + (if (has("notification") and ($refresh_secrets | not)) then ["export NOTIFICATION_IMAGE=" + $notification] else [] end)
+                  + (if (has("store") and ($refresh_secrets | not)) then ["export STORE_IMAGE=" + $store] else [] end)
+                  + (if (has("cart") and ($refresh_secrets | not)) then ["export CART_IMAGE=" + $cart] else [] end)
+                  + (if (has("order") and ($refresh_secrets | not)) then ["export ORDER_IMAGE=" + $order] else [] end)
+                  + (if (has("payment") and ($refresh_secrets | not)) then ["export PAYMENT_IMAGE=" + $payment] else [] end)
                   + (if $run_migrator then ["export DATABASE_MIGRATOR_IMAGE=" + $migrator] else [] end)
-                  + (if ($run_migrator or has_targets) then ["touch .env"] else [] end)
-                  + (if has("identity") then [
+                  + (if (has("identity") and ($refresh_secrets | not)) then [
                       "sed -i /^IDENTITY_IMAGE=/d .env",
                       ("echo IDENTITY_IMAGE=" + $identity + " >> .env")
                     ] else [] end)
-                  + (if has("notification") then [
+                  + (if (has("notification") and ($refresh_secrets | not)) then [
                       "sed -i /^NOTIFICATION_IMAGE=/d .env",
                       ("echo NOTIFICATION_IMAGE=" + $notification + " >> .env")
                     ] else [] end)
-                  + (if has("store") then [
+                  + (if (has("store") and ($refresh_secrets | not)) then [
                       "sed -i /^STORE_IMAGE=/d .env",
                       ("echo STORE_IMAGE=" + $store + " >> .env")
                     ] else [] end)
-                  + (if has("cart") then [
+                  + (if (has("cart") and ($refresh_secrets | not)) then [
                       "sed -i /^CART_IMAGE=/d .env",
                       ("echo CART_IMAGE=" + $cart + " >> .env")
                     ] else [] end)
-                  + (if has("order") then [
+                  + (if (has("order") and ($refresh_secrets | not)) then [
                       "sed -i /^ORDER_IMAGE=/d .env",
                       ("echo ORDER_IMAGE=" + $order + " >> .env")
                     ] else [] end)
-                  + (if has("payment") then [
+                  + (if (has("payment") and ($refresh_secrets | not)) then [
                       "sed -i /^PAYMENT_IMAGE=/d .env",
                       ("echo PAYMENT_IMAGE=" + $payment + " >> .env")
                     ] else [] end)
@@ -208,48 +264,45 @@ jobs:
                       "sed -i /^DATABASE_MIGRATOR_IMAGE=/d .env",
                       ("echo DATABASE_MIGRATOR_IMAGE=" + $migrator + " >> .env")
                     ] else [] end)
-                  + (if ($run_migrator or has_targets) then [
+                  + (if (($run_migrator or has_targets) and ($refresh_secrets | not)) then [
                       ("aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry)
                     ] else ["echo No backend image deployment required"] end)
-                  + (if $compose_changed then [
-                      "docker compose config --quiet"
-                    ] else [] end)
                   + (if $run_migrator then [
-                      ("docker compose --profile database config --images | grep -Fqx " + $migrator),
-                      "docker compose --profile database pull database-migrator",
-                      "docker compose up -d sqlserver rabbitmq redis",
-                      "docker compose --profile database up --no-build --abort-on-container-exit --exit-code-from database-migrator database-migrator"
+                      ("compose --profile database config --images | grep -Fqx " + $migrator),
+                      "compose --profile database pull database-migrator",
+                      "compose up -d sqlserver rabbitmq redis",
+                      "compose --profile database up --no-build --abort-on-container-exit --exit-code-from database-migrator database-migrator"
                     ] else [] end)
-                  + (if has_targets then [
-                      "docker compose up -d --no-build rabbitmq",
-                      "rabbit_id=$(docker compose ps -q rabbitmq)",
+                  + (if (has_targets and ($refresh_secrets | not)) then [
+                      "compose up -d --no-build rabbitmq",
+                      "rabbit_id=$(compose ps -q rabbitmq)",
                       "test -n \"$rabbit_id\"",
                       "rabbit_health=unknown",
                       "for i in $(seq 1 60); do rabbit_health=$(docker inspect --format \"{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}\" \"$rabbit_id\"); echo \"RabbitMQ health: $rabbit_health\"; if [ \"$rabbit_health\" = healthy ]; then break; fi; sleep 2; done",
                       "test \"$rabbit_health\" = healthy"
                     ] else [] end)
-                  + (if has_targets then [
-                      (if has("identity") then ("docker compose config --images | grep -Fqx " + $identity) else empty end),
-                      (if has("notification") then ("docker compose config --images | grep -Fqx " + $notification) else empty end),
-                      (if has("store") then ("docker compose config --images | grep -Fqx " + $store) else empty end),
-                      (if has("cart") then ("docker compose config --images | grep -Fqx " + $cart) else empty end),
-                      (if has("order") then ("docker compose config --images | grep -Fqx " + $order) else empty end),
-                      (if has("payment") then ("docker compose config --images | grep -Fqx " + $payment) else empty end),
-                      ("docker compose pull " + (targets | join(" ")))
+                  + (if (has_targets and ($refresh_secrets | not)) then [
+                      (if has("identity") then ("compose config --images | grep -Fqx " + $identity) else empty end),
+                      (if has("notification") then ("compose config --images | grep -Fqx " + $notification) else empty end),
+                      (if has("store") then ("compose config --images | grep -Fqx " + $store) else empty end),
+                      (if has("cart") then ("compose config --images | grep -Fqx " + $cart) else empty end),
+                      (if has("order") then ("compose config --images | grep -Fqx " + $order) else empty end),
+                      (if has("payment") then ("compose config --images | grep -Fqx " + $payment) else empty end),
+                      ("compose pull " + (targets | join(" ")))
                     ] else [] end)
                   + (if $compose_changed then [
-                      "docker compose up -d --no-build --force-recreate",
-                      "docker compose ps --status running",
-                      "for service in identity-api notification-api store-api cart-api order-api payment-api; do docker compose ps --status running --services | grep -qx \"$service\"; done"
+                      "compose up -d --no-build --force-recreate",
+                      "compose ps --status running",
+                      "for service in identity-api notification-api store-api cart-api order-api payment-api; do compose ps --status running --services | grep -qx \"$service\"; done"
                     ] elif has_targets then [
-                      ("docker compose up -d --no-build --no-deps --force-recreate " + (targets | join(" "))),
-                      "docker compose ps --status running",
-                      (if has("identity") then "docker compose ps --status running --services | grep -qx identity-api" else empty end),
-                      (if has("notification") then "docker compose ps --status running --services | grep -qx notification-api" else empty end),
-                      (if has("store") then "docker compose ps --status running --services | grep -qx store-api" else empty end),
-                      (if has("cart") then "docker compose ps --status running --services | grep -qx cart-api" else empty end),
-                      (if has("order") then "docker compose ps --status running --services | grep -qx order-api" else empty end),
-                      (if has("payment") then "docker compose ps --status running --services | grep -qx payment-api" else empty end)
+                      ("compose up -d --no-build --no-deps --force-recreate " + (targets | join(" "))),
+                      "compose ps --status running",
+                      (if has("identity") then "compose ps --status running --services | grep -qx identity-api" else empty end),
+                      (if has("notification") then "compose ps --status running --services | grep -qx notification-api" else empty end),
+                      (if has("store") then "compose ps --status running --services | grep -qx store-api" else empty end),
+                      (if has("cart") then "compose ps --status running --services | grep -qx cart-api" else empty end),
+                      (if has("order") then "compose ps --status running --services | grep -qx order-api" else empty end),
+                      (if has("payment") then "compose ps --status running --services | grep -qx payment-api" else empty end)
                     ] else [] end)
                   + (if ($compose_changed or has_targets) then [
                       ("cd " + $frontend_path),
@@ -264,7 +317,7 @@ jobs:
           command_id=$(aws ssm send-command \
             --instance-ids "$AWS_EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
-            --comment "Deploy backend $IMAGE_TAG" \
+            --comment "Deploy backend${IMAGE_TAG:+ $IMAGE_TAG}" \
             --parameters "$commands" \
             --query Command.CommandId \
             --output text)
