@@ -221,16 +221,43 @@ jobs:
           echo "application_code_changed=$application_code_changed" >> "$GITHUB_OUTPUT"
           echo "compose_changed=$compose_changed" >> "$GITHUB_OUTPUT"
 
-      - name: Validate Compose configuration
+      - name: Validate Compose configuration and required secrets
         env:
           CI_ENV_FILE: ${{ runner.temp }}/backend-compose.env
+          CI_MISSING_ENV_FILE: ${{ runner.temp }}/backend-compose-missing.env
         run: |
           set -euo pipefail
-          printf 'MSSQL_SA_PASSWORD=ci-only-validation-password-123!\n' > "$CI_ENV_FILE"
+          umask 077
+          trap 'rm -f "$CI_ENV_FILE" "$CI_MISSING_ENV_FILE"' EXIT
+
+          printf '%s\n' \
+            'ASPNETCORE_ENVIRONMENT=Production' \
+            'MSSQL_SA_PASSWORD=ci-only-validation-password-123!' \
+            'JWT_SECRET=ci-only-validation-jwt-secret-with-sufficient-length' \
+            'AWS_ACCESS_KEY=ci-only-validation-access-key' \
+            'AWS_SECRET_KEY=ci-only-validation-secret-key' \
+            'BREVO_API_KEY=ci-only-validation-brevo-api-key' \
+            'GEOAPIFY_API_KEY=ci-only-validation-geoapify-api-key' \
+            'VNPAY_TMN_CODE=ci-only-validation-tmn-code' \
+            'VNPAY_HASH_SECRET=ci-only-validation-hash-secret' \
+            > "$CI_ENV_FILE"
+
+          chmod 600 "$CI_ENV_FILE"
+
           docker compose \
             --env-file "$CI_ENV_FILE" \
             -f src/Services/docker-compose.yml \
             config --quiet
+
+          grep -v '^JWT_SECRET=' "$CI_ENV_FILE" > "$CI_MISSING_ENV_FILE"
+
+          if docker compose \
+            --env-file "$CI_MISSING_ENV_FILE" \
+            -f src/Services/docker-compose.yml \
+            config --quiet >/dev/null 2>&1; then
+            echo '::error::Compose accepted a missing required JWT_SECRET'
+            exit 1
+          fi
 
       - name: Upload deployment manifest
         uses: actions/upload-artifact@v4
