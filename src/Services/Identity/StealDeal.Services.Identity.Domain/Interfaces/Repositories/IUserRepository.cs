@@ -12,5 +12,8 @@ namespace StealDeal.Services.Identity.Domain.Interfaces.Repositories
         void Delete(User entity);
         Task<User?> GetByEmailAsync(string email);
         Task<bool> IsEmailUniqueAsync(string email);
+        Task<UserAddress?> GetAddressAsync(Guid userId, Guid addressId);
+        Task AddAddressAsync(UserAddress address);
+        void DeleteAddress(UserAddress address);
     }
 }

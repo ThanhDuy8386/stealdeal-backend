@@ -9,8 +9,10 @@ namespace StealDeal.Services.Identity.Application.DTOs.Responses
         public Guid Id { get; set; }
         public string Label { get; set; } = null!;
         public string Address { get; set; } = null!;
-        public string District { get; set; } = null!;
-        public string City { get; set; } = null!;
+        public string Commune { get; set; } = null!;
+        public string Province { get; set; } = null!;
+        public decimal? Latitude { get; set; }
+        public decimal? Longitude { get; set; }
         public bool IsDefault { get; set; }
     }
 }
