@@ -6,7 +6,7 @@ using StealDeal.Services.Store.Application.Services.Interfaces;
 namespace StealDeal.Services.Store.API.Controllers
 {
     [ApiController]
-    [Route("api/locations")]
+    [Route("api/store/locations")]
     [Authorize]
     [EnableRateLimiting("LocationPolicy")]
     public class LocationController : ControllerBase
