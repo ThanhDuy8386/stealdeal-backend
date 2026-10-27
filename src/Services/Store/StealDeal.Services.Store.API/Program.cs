@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using StackExchange.Redis;
 using StealDeal.Services.Store.API.Middlewares;
 using StealDeal.Services.Store.Application.DTOs.Events;
 using StealDeal.Services.Store.Application.EventHandlers;
@@ -32,7 +34,15 @@ builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Out
 
 builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
 builder.Services.Configure<GeoapifySettings>(builder.Configuration.GetSection("Geoapify"));
+builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+builder.Services.Configure<GeminiSettings>(builder.Configuration.GetSection("Gemini"));
 builder.Services.AddMemoryCache();
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var redisSettings = sp.GetRequiredService<IOptions<RedisSettings>>().Value;
+    return ConnectionMultiplexer.Connect(redisSettings.ConnectionString);
+});
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -42,6 +52,7 @@ builder.Services.AddScoped<ISurpriseBagRepository, SurpriseBagRepository>();
 builder.Services.AddScoped<IStoreReviewRepository, StoreReviewRepository>();
 builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
 builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
+builder.Services.AddScoped<IChatSessionStore, RedisChatSessionStore>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 
@@ -51,6 +62,7 @@ builder.Services.AddScoped<ICategorySuggestionService, CategorySuggestionService
 builder.Services.AddScoped<IStoreProfileService, StoreProfileService>();
 builder.Services.AddScoped<ISurpriseBagService, SurpriseBagService>();
 builder.Services.AddScoped<IStoreReviewService, StoreReviewService>();
+builder.Services.AddScoped<IChatAssistantService, ChatAssistantService>();
 builder.Services.AddScoped<IIntegrationEventHandler<CreateOrderEvent>, CreateOrderEventHandler>();
 builder.Services.AddScoped<
     IIntegrationEventHandler<InventoryReleaseRequestedEvent>,
@@ -173,6 +185,13 @@ builder.Services.AddHttpClient<ILocationService, GeoapifyLocationService>(client
 
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
+builder.Services.AddHttpClient<IGeminiClient, GeminiClient>((serviceProvider, client) =>
+{
+    var geminiSettings = serviceProvider.GetRequiredService<IOptions<GeminiSettings>>().Value;
+    client.BaseAddress = new Uri(geminiSettings.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(30);
 });
 
 // ─────────────────────────────────────────────────────────
