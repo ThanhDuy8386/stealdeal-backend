@@ -100,5 +100,23 @@ namespace StealDeal.Services.Identity.Infrastructure.Repositories
         {
             _context.Users.Update(entity);
         }
+
+        public async Task<UserAddress?> GetAddressAsync(Guid userId, Guid addressId)
+        {
+            return await _context.UserAddresses
+                .FirstOrDefaultAsync(address =>
+                address.UserId == userId &&
+                address.Id == addressId);
+        }
+
+        public async Task AddAddressAsync(UserAddress address)
+        {
+            await _context.UserAddresses.AddAsync(address);
+        }
+
+        public void DeleteAddress(UserAddress address)
+        {
+            _context.UserAddresses.Remove(address);
+        }
     }
 }

@@ -73,8 +73,10 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Label).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Address).IsRequired().HasMaxLength(500);
-                entity.Property(e => e.District).IsRequired().HasMaxLength(100);
-                entity.Property(e => e.City).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Commune).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Province).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Latitude).HasPrecision(10, 7);
+                entity.Property(e => e.Longitude).HasPrecision(10, 7);
 
                 entity.HasOne(e => e.User)
                       .WithMany(u => u.UserAddresses)

@@ -64,6 +64,46 @@ namespace StealDeal.Services.Identity.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("addresses")]
+        public async Task<IActionResult> GetAddresses()
+        {
+            var result = await _accountService.GetAddressesAsync(GetCurrentUserId());
+
+            return Ok(result);
+        }
+
+        [HttpGet("addresses/{id:guid}")]
+        public async Task<IActionResult> GetAddress(Guid id)
+        {
+            var result = await _accountService.GetAddressAsync(GetCurrentUserId(), id);
+
+            return Ok(result);
+        }
+
+        [HttpPost("addresses")]
+        public async Task<IActionResult> CreateAddress([FromBody] CreateUserAddressRequest request)
+        {
+            var result = await _accountService.CreateAddressAsync(GetCurrentUserId(), request);
+
+            return CreatedAtAction(nameof(GetAddress), new { id = result.Id }, result);
+        }
+
+        [HttpPut("addresses/{id:guid}")]
+        public async Task<IActionResult> UpdateAddress(Guid id, [FromBody] UpdateUserAddressRequest request)
+        {
+            var result = await _accountService.UpdateAddressAsync(GetCurrentUserId(), id, request);
+
+            return Ok(result);
+        }
+
+        [HttpDelete("addresses/{id:guid}")]
+        public async Task<IActionResult> DeleteAddress(Guid id)
+        {
+            await _accountService.DeleteAddressAsync(GetCurrentUserId(), id);
+
+            return NoContent();
+        }
+
         private Guid GetCurrentUserId()
         {
             var subject = User.FindFirstValue(ClaimTypes.NameIdentifier)

@@ -41,8 +41,10 @@ namespace StealDeal.Services.Identity.Application.Mappings
                     Id = a.Id,
                     Label = a.Label,
                     Address = a.Address,
-                    District = a.District,
-                    City = a.City,
+                    Commune = a.Commune,
+                    Province = a.Province,
+                    Latitude = a.Latitude,
+                    Longitude = a.Longitude,
                     IsDefault = a.IsDefault
                 }).ToList(),
                 UserTrustScore = user.UserTrustScore != null ? new UserTrustScoreResponse
