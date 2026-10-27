@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using StackExchange.Redis;
 using StealDeal.Services.Store.API.Middlewares;
 using StealDeal.Services.Store.Application.DTOs.Events;
 using StealDeal.Services.Store.Application.EventHandlers;
@@ -31,9 +33,16 @@ builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("R
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 
 builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
-builder.Services.Configure<GoongSettings>(builder.Configuration.GetSection("Goong"));
 builder.Services.Configure<GeoapifySettings>(builder.Configuration.GetSection("Geoapify"));
+builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+builder.Services.Configure<GeminiSettings>(builder.Configuration.GetSection("Gemini"));
 builder.Services.AddMemoryCache();
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var redisSettings = sp.GetRequiredService<IOptions<RedisSettings>>().Value;
+    return ConnectionMultiplexer.Connect(redisSettings.ConnectionString);
+});
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -43,6 +52,7 @@ builder.Services.AddScoped<ISurpriseBagRepository, SurpriseBagRepository>();
 builder.Services.AddScoped<IStoreReviewRepository, StoreReviewRepository>();
 builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
 builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
+builder.Services.AddScoped<IChatSessionStore, RedisChatSessionStore>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 
@@ -52,6 +62,7 @@ builder.Services.AddScoped<ICategorySuggestionService, CategorySuggestionService
 builder.Services.AddScoped<IStoreProfileService, StoreProfileService>();
 builder.Services.AddScoped<ISurpriseBagService, SurpriseBagService>();
 builder.Services.AddScoped<IStoreReviewService, StoreReviewService>();
+builder.Services.AddScoped<IChatAssistantService, ChatAssistantService>();
 builder.Services.AddScoped<IIntegrationEventHandler<CreateOrderEvent>, CreateOrderEventHandler>();
 builder.Services.AddScoped<
     IIntegrationEventHandler<InventoryReleaseRequestedEvent>,
@@ -120,21 +131,6 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
-
-    options.AddPolicy("GoongLocationPolicy", httpContext =>
-    {
-        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                           ?? httpContext.User.FindFirstValue("sub")
-                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
-                           ?? "anonymous";
-
-        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 30,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0
-        });
-    });
 });
 
 builder.Services.AddCors(options =>
@@ -180,33 +176,23 @@ builder.Services.AddHttpClient<IOrderVerificationService, OrderVerificationServi
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
-var locationProvider = builder.Configuration["LocationProvider"] ?? "Geoapify";
-if (string.Equals(locationProvider, "Goong", StringComparison.OrdinalIgnoreCase))
+builder.Services.AddHttpClient<ILocationService, GeoapifyLocationService>(client =>
 {
-    builder.Services.AddHttpClient<ILocationService, GoongLocationService>(client =>
-    {
-        var baseUrl = builder.Configuration["Goong:BaseUrl"] ?? "https://rsapi.goong.io";
-        var timeoutSeconds = int.TryParse(builder.Configuration["Goong:TimeoutSeconds"], out var parsedTimeout)
-            ? parsedTimeout
-            : 10;
+    var baseUrl = builder.Configuration["Geoapify:BaseUrl"] ?? "https://api.geoapify.com";
+    var timeoutSeconds = int.TryParse(builder.Configuration["Geoapify:TimeoutSeconds"], out var parsedTimeout)
+        ? parsedTimeout
+        : 10;
 
-        client.BaseAddress = new Uri(baseUrl);
-        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-    });
-}
-else
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
+builder.Services.AddHttpClient<IGeminiClient, GeminiClient>((serviceProvider, client) =>
 {
-    builder.Services.AddHttpClient<ILocationService, GeoapifyLocationService>(client =>
-    {
-        var baseUrl = builder.Configuration["Geoapify:BaseUrl"] ?? "https://api.geoapify.com";
-        var timeoutSeconds = int.TryParse(builder.Configuration["Geoapify:TimeoutSeconds"], out var parsedTimeout)
-            ? parsedTimeout
-            : 10;
-
-        client.BaseAddress = new Uri(baseUrl);
-        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-    });
-}
+    var geminiSettings = serviceProvider.GetRequiredService<IOptions<GeminiSettings>>().Value;
+    client.BaseAddress = new Uri(geminiSettings.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 // ─────────────────────────────────────────────────────────
 var app = builder.Build();

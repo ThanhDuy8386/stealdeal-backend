@@ -352,6 +352,8 @@ permissions, including the ability to manage accounts with either admin role.
 | `PATCH` | `/api/reviews/{id}/report` | Bearer | none | `204 NoContent` |
 | `DELETE` | `/api/reviews/{id}/report` | Owning Seller, Admin, or SuperAdmin | none | `204 NoContent` |
 | `DELETE` | `/api/reviews/{id}` | Admin or SuperAdmin | none | `204 NoContent` |
+| `POST` | `/api/store/chat` | Public | `ChatRequest` | `200 ChatResponse` |
+| `DELETE` | `/api/store/chat/{sessionId}` | Public | none | `204 NoContent` |
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
@@ -420,12 +422,21 @@ the timestamp in `repliedAt`. Reply text cannot be empty whitespace.
 - `status: "Approved"` generates a slug from `officialCategoryName` (if provided to fix typos/casing) or `suggestedName`, verifies slug uniqueness against official categories (`409 Conflict`), inserts a new active `Category` with `iconUrl`, and updates suggestion status to `Approved`.
 - `status: "Rejected"` updates suggestion status to `Rejected` and records `adminComment`.
 
-`GET /api/locations/autocomplete` and `GET /api/locations/place-detail` proxy map/location queries through the backend (Geoapify by default, switchable to Goong) so provider API keys remain secret:
+`GET /api/locations/autocomplete` and `GET /api/locations/place-detail` proxy map/location queries through the backend (Geoapify) so provider API keys remain secret:
 - Requires authentication (`Bearer`).
 - Enforces per-user rate limiting (30 requests/minute via `LocationPolicy`, returning `429 Too Many Requests`).
 - Results are cached in memory for 5 minutes.
 - `autocomplete` requires `input` between 3 and 200 characters, and accepts optional `sessionToken` and `latitude`/`longitude` for proximity biasing.
 - `place-detail` retrieves coordinates (`latitude`, `longitude`), `formattedAddress`, and administrative units (`commune`, `province`) for a given `placeId`.
+
+`POST /api/store/chat` provides an AI shopping assistant powered by Google AI Studio (Gemini Flash):
+- Publicly accessible without authentication.
+- Request accepts an optional `sessionId` and a required `message` (1..500 characters).
+- Chat history is stored ephemerally in Redis under `chat:session:{sessionId}` with a 30-minute sliding expiration window and automatic FIFO trimming to the last 10 turns.
+- If `sessionId` is omitted or empty, the backend generates and returns a new session ID.
+- Expired sessions transparently start a fresh conversation without error.
+- Returns `200 OK` with `sessionId`, `reply`, and `suggestedBags` array.
+- `DELETE /api/store/chat/{sessionId}` clears the session from Redis (`204 NoContent`).
 
 ### Requests
 
@@ -527,6 +538,11 @@ export interface ReviewFilterRequest {
   hasReply?: boolean;   // true = replied, false = needs reply
   search?: string;      // search across comment, buyer name, bag name, and store reply
   isReported?: boolean; // seller dashboard endpoint only
+}
+
+export interface ChatRequest {
+  sessionId?: string | null;
+  message: string;
 }
 ```
 
@@ -642,6 +658,12 @@ export interface StoreReviewResponse {
   repliedAt: ISODateTime | null;
   createdAt: ISODateTime;
   isReported?: boolean; // omitted from public responses; present in seller dashboard & admin endpoints
+}
+
+export interface ChatResponse {
+  sessionId: string;
+  reply: string;
+  suggestedBags: SurpriseBagResponse[];
 }
 ```
 
