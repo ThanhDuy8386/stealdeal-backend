@@ -484,6 +484,11 @@ export interface NearbyQueryRequest {
   radiusInKm?: number;       // search radius in km (default 10.0, range 0.1..100.0)
   limit?: number;            // max results (default 20, range 1..100)
   status?: string;           // optional bag status filter
+  query?: string;            // store or bag name/description keyword search
+  storeName?: string;        // alias for store name search
+  category?: string;         // category name or slug (e.g. "bakery", "meals")
+  sortBy?: string;           // "distance" (default), "rating", "name", or "price" (bags only)
+  sortOrder?: string;        // "asc" or "desc" (defaults: rating desc, distance asc)
 }
 
 export interface CreateStoreRequest {

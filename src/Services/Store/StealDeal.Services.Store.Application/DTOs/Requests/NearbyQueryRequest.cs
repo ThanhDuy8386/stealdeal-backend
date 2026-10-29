@@ -13,6 +13,15 @@ namespace StealDeal.Services.Store.Application.DTOs.Requests
         public int Limit { get; set; } = 20;
         public string? Status { get; set; }
 
+        // Filtering options
+        public string? Query { get; set; }
+        public string? StoreName { get; set; }
+        public string? Category { get; set; }
+
+        // Sorting options
+        public string? SortBy { get; set; }
+        public string? SortOrder { get; set; }
+
         public (decimal Latitude, decimal Longitude) ResolveCoordinates()
         {
             var lat = Latitude ?? Lat;
@@ -36,5 +45,20 @@ namespace StealDeal.Services.Store.Application.DTOs.Requests
         public double GetClampedRadius() => Math.Clamp(RadiusInKm <= 0 ? 10.0 : RadiusInKm, 0.1, 100.0);
 
         public int GetClampedLimit() => Math.Clamp(Limit <= 0 ? 20 : Limit, 1, 100);
+
+        public string? GetSearchQuery() => !string.IsNullOrWhiteSpace(Query)
+            ? Query.Trim()
+            : (!string.IsNullOrWhiteSpace(StoreName) ? StoreName.Trim() : null);
+
+        public string GetNormalizedSortBy() => SortBy?.Trim().ToLowerInvariant() switch
+        {
+            "rating" => "rating",
+            "name" => "name",
+            "price" => "price",
+            _ => "distance"
+        };
+
+        public bool IsDescending() => string.Equals(SortOrder?.Trim(), "desc", StringComparison.OrdinalIgnoreCase)
+            || (string.IsNullOrWhiteSpace(SortOrder) && GetNormalizedSortBy() == "rating");
     }
 }

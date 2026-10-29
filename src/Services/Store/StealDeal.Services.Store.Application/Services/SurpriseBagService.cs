@@ -184,16 +184,39 @@ namespace StealDeal.Services.Store.Application.Services
 
             var (minLat, maxLat, minLng, maxLng) = GeoCalculator.CalculateBoundingBox(lat, lng, radiusKm);
 
-            var candidates = await _bagRepository.GetNearbyCandidatesAsync(minLat, maxLat, minLng, maxLng, request.Status);
+            var candidates = await _bagRepository.GetNearbyCandidatesAsync(
+                minLat,
+                maxLat,
+                minLng,
+                maxLng,
+                request.Status,
+                request.GetSearchQuery(),
+                request.Category);
 
-            return candidates
+            var items = candidates
                 .Select(b => new
                 {
                     Bag = b,
                     Distance = GeoCalculator.CalculateDistanceKm(lat, lng, b.Store.Latitude!.Value, b.Store.Longitude!.Value)
                 })
-                .Where(x => x.Distance <= radiusKm)
-                .OrderBy(x => x.Distance)
+                .Where(x => x.Distance <= radiusKm);
+
+            var sortBy = request.GetNormalizedSortBy();
+            var desc = request.IsDescending();
+
+            var sorted = (sortBy, desc) switch
+            {
+                ("price", false)  => items.OrderBy(x => x.Bag.SalePrice).ThenBy(x => x.Distance),
+                ("price", true)   => items.OrderByDescending(x => x.Bag.SalePrice).ThenBy(x => x.Distance),
+                ("rating", false) => items.OrderBy(x => x.Bag.Store.RatingScore).ThenBy(x => x.Distance),
+                ("rating", true)  => items.OrderByDescending(x => x.Bag.Store.RatingScore).ThenBy(x => x.Distance),
+                ("name", false)   => items.OrderBy(x => x.Bag.Name).ThenBy(x => x.Distance),
+                ("name", true)    => items.OrderByDescending(x => x.Bag.Name).ThenBy(x => x.Distance),
+                (_, true)         => items.OrderByDescending(x => x.Distance),
+                _                 => items.OrderBy(x => x.Distance)
+            };
+
+            return sorted
                 .Take(limit)
                 .Select(x => x.Bag.ToResponse(x.Distance))
                 .ToList();

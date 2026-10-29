@@ -48,9 +48,15 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
         }
 
         public async Task<List<SurpriseBag>> GetNearbyCandidatesAsync(
-            decimal minLat, decimal maxLat, decimal minLng, decimal maxLng, string? status = null)
+            decimal minLat,
+            decimal maxLat,
+            decimal minLng,
+            decimal maxLng,
+            string? status = null,
+            string? query = null,
+            string? category = null)
         {
-            var query = _context.SurpriseBags
+            var dbQuery = _context.SurpriseBags
                 .AsNoTracking()
                 .Include(b => b.Store)
                 .Include(b => b.Categories)
@@ -62,10 +68,25 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
 
             if (!string.IsNullOrWhiteSpace(status))
             {
-                query = query.Where(b => b.Status == status);
+                dbQuery = dbQuery.Where(b => b.Status == status);
             }
 
-            return await query.ToListAsync();
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                var trimmedQuery = query.Trim().ToLower();
+                dbQuery = dbQuery.Where(b => b.Name.ToLower().Contains(trimmedQuery)
+                    || b.Store.Name.ToLower().Contains(trimmedQuery)
+                    || (b.Description != null && b.Description.ToLower().Contains(trimmedQuery)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(category))
+            {
+                var trimmedCategory = category.Trim().ToLower();
+                dbQuery = dbQuery.Where(b => b.Categories.Any(c =>
+                    c.Name.ToLower() == trimmedCategory || c.Slug.ToLower() == trimmedCategory));
+            }
+
+            return await dbQuery.ToListAsync();
         }
 
         public void Update(SurpriseBag entity)

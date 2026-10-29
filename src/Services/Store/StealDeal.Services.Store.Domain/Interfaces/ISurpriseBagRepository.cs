@@ -14,7 +14,14 @@ namespace StealDeal.Services.Store.Domain.Interfaces
         void Delete(SurpriseBag entity);
         Task<IEnumerable<SurpriseBag>> GetAllAsync();
         Task<IEnumerable<SurpriseBag>> GetByStoreIdAsync(Guid storeId);
-        Task<List<SurpriseBag>> GetNearbyCandidatesAsync(decimal minLat, decimal maxLat, decimal minLng, decimal maxLng, string? status = null);
+        Task<List<SurpriseBag>> GetNearbyCandidatesAsync(
+            decimal minLat,
+            decimal maxLat,
+            decimal minLng,
+            decimal maxLng,
+            string? status = null,
+            string? query = null,
+            string? category = null);
         Task<bool> TryReserveQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
         Task<bool> TryReleaseQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
     }

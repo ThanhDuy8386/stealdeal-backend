@@ -45,15 +45,36 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
             return await _context.StoreProfiles.FirstOrDefaultAsync(x => x.Id == id);
         }
 
-        public async Task<List<StoreProfile>> GetNearbyCandidatesAsync(decimal minLat, decimal maxLat, decimal minLng, decimal maxLng)
+        public async Task<List<StoreProfile>> GetNearbyCandidatesAsync(
+            decimal minLat,
+            decimal maxLat,
+            decimal minLng,
+            decimal maxLng,
+            string? query = null,
+            string? category = null)
         {
-            return await _context.StoreProfiles
+            var dbQuery = _context.StoreProfiles
                 .AsNoTracking()
                 .Where(s => s.IsActive && s.IsVerify
                     && s.Latitude.HasValue && s.Longitude.HasValue
                     && s.Latitude.Value >= minLat && s.Latitude.Value <= maxLat
-                    && s.Longitude.Value >= minLng && s.Longitude.Value <= maxLng)
-                .ToListAsync();
+                    && s.Longitude.Value >= minLng && s.Longitude.Value <= maxLng);
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                var trimmedQuery = query.Trim().ToLower();
+                dbQuery = dbQuery.Where(s => s.Name.ToLower().Contains(trimmedQuery)
+                    || (s.Description != null && s.Description.ToLower().Contains(trimmedQuery)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(category))
+            {
+                var trimmedCategory = category.Trim().ToLower();
+                dbQuery = dbQuery.Where(s => s.SurpriseBags.Any(b => b.Categories.Any(c =>
+                    c.Name.ToLower() == trimmedCategory || c.Slug.ToLower() == trimmedCategory)));
+            }
+
+            return await dbQuery.ToListAsync();
         }
 
         public void Update(StoreProfile entity)

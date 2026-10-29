@@ -94,16 +94,36 @@ namespace StealDeal.Services.Store.Application.Services
 
             var (minLat, maxLat, minLng, maxLng) = GeoCalculator.CalculateBoundingBox(lat, lng, radiusKm);
 
-            var candidates = await _storeRepository.GetNearbyCandidatesAsync(minLat, maxLat, minLng, maxLng);
+            var candidates = await _storeRepository.GetNearbyCandidatesAsync(
+                minLat,
+                maxLat,
+                minLng,
+                maxLng,
+                request.GetSearchQuery(),
+                request.Category);
 
-            return candidates
+            var items = candidates
                 .Select(s => new
                 {
                     Store = s,
                     Distance = GeoCalculator.CalculateDistanceKm(lat, lng, s.Latitude!.Value, s.Longitude!.Value)
                 })
-                .Where(x => x.Distance <= radiusKm)
-                .OrderBy(x => x.Distance)
+                .Where(x => x.Distance <= radiusKm);
+
+            var sortBy = request.GetNormalizedSortBy();
+            var desc = request.IsDescending();
+
+            var sorted = (sortBy, desc) switch
+            {
+                ("rating", false) => items.OrderBy(x => x.Store.RatingScore).ThenBy(x => x.Distance),
+                ("rating", true)  => items.OrderByDescending(x => x.Store.RatingScore).ThenBy(x => x.Distance),
+                ("name", false)   => items.OrderBy(x => x.Store.Name).ThenBy(x => x.Distance),
+                ("name", true)    => items.OrderByDescending(x => x.Store.Name).ThenBy(x => x.Distance),
+                (_, true)         => items.OrderByDescending(x => x.Distance),
+                _                 => items.OrderBy(x => x.Distance)
+            };
+
+            return sorted
                 .Take(limit)
                 .Select(x => x.Store.ToResponse(x.Distance))
                 .ToList();
