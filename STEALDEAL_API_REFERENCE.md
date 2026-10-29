@@ -325,6 +325,7 @@ permissions, including the ability to manage accounts with either admin role.
 | `GET` | `/api/category-suggestions/pending` | Admin | none | `200 CategorySuggestionResponse[]` |
 | `POST` | `/api/category-suggestions/{id}/review` | Admin | `ReviewCategorySuggestionRequest` | `200 CategorySuggestionResponse` |
 | `GET` | `/api/stores` | Public | none | `200 StoreProfileResponse[]` |
+| `GET` | `/api/store/stores/nearby` | Public | `NearbyQueryRequest` query | `200 StoreProfileResponse[]` |
 | `GET` | `/api/stores/pending` | Admin or SuperAdmin | none | `200 PendingStoreResponse[]` |
 | `GET` | `/api/stores/{id}` | Public | none | `200 StoreProfileResponse` |
 | `GET` | `/api/stores/me` | Seller | none | `200 StoreProfileResponse` |
@@ -336,6 +337,7 @@ permissions, including the ability to manage accounts with either admin role.
 | `GET` | `/api/locations/autocomplete` | Bearer | `LocationAutocompleteQueryRequest` query | `200 AutocompleteSuggestionResponse[]` |
 | `GET` | `/api/locations/place-detail` | Bearer | `LocationPlaceDetailQueryRequest` query | `200 PlaceDetailResponse` |
 | `GET` | `/api/bags` | Public | none | `200 SurpriseBagResponse[]` |
+| `GET` | `/api/store/bags/nearby` | Public | `NearbyQueryRequest` query | `200 SurpriseBagResponse[]` |
 | `GET` | `/api/bags/{id}` | Public | none | `200 SurpriseBagResponse` |
 | `GET` | `/api/bags/store/{storeId}` | Public | none | `200 SurpriseBagResponse[]` |
 | `POST` | `/api/bags` | Seller | `multipart/form-data` (`CreateBagRequest` + optional `image: File`) | `201 SurpriseBagResponse` |
@@ -474,6 +476,21 @@ export interface ReviewCategorySuggestionRequest {
   officialCategoryName?: string | null;
 }
 
+export interface NearbyQueryRequest {
+  latitude?: number;         // user latitude (-90..90), also accepts lat
+  longitude?: number;        // user longitude (-180..180), also accepts lng
+  lat?: number;
+  lng?: number;
+  radiusInKm?: number;       // search radius in km (default 10.0, range 0.1..100.0)
+  limit?: number;            // max results (default 20, range 1..100)
+  status?: string;           // optional bag status filter
+  query?: string;            // store or bag name/description keyword search
+  storeName?: string;        // alias for store name search
+  category?: string;         // category name or slug (e.g. "bakery", "meals")
+  sortBy?: string;           // "distance" (default), "rating", "name", or "price" (bags only)
+  sortOrder?: string;        // "asc" or "desc" (defaults: rating desc, distance asc)
+}
+
 export interface CreateStoreRequest {
   name: string;
   description?: string | null;
@@ -581,6 +598,7 @@ export interface StoreProfileResponse {
   phone: string | null;
   ratingScore: number;
   reviewCount: number;
+  distanceKm?: number | null;
   isVerify: boolean;
   isActive: boolean;
   createdAt: ISODateTime;
@@ -641,6 +659,7 @@ export interface SurpriseBagResponse {
   expiryDate: ISODateTime;
   status: string;
   categories: CategoryResponse[];
+  distanceKm?: number | null;
   createdAt: ISODateTime;
 }
 

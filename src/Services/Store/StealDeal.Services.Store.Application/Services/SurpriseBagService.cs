@@ -1,3 +1,4 @@
+using StealDeal.Services.Store.Application.Common;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.DTOs.Responses;
 using StealDeal.Services.Store.Application.Exceptions;
@@ -5,6 +6,11 @@ using StealDeal.Services.Store.Application.Mappings;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
 using StealDeal.Services.Store.Domain.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace StealDeal.Services.Store.Application.Services
 {
@@ -168,6 +174,52 @@ namespace StealDeal.Services.Store.Application.Services
         {
             var bags = await _bagRepository.GetByStoreIdAsync(storeId);
             return bags.Select(b => b.ToResponse()).ToList();
+        }
+
+        public async Task<List<SurpriseBagResponse>> GetNearbyAsync(NearbyQueryRequest request)
+        {
+            var (lat, lng) = request.ResolveCoordinates();
+            var radiusKm = request.GetClampedRadius();
+            var limit = request.GetClampedLimit();
+
+            var (minLat, maxLat, minLng, maxLng) = GeoCalculator.CalculateBoundingBox(lat, lng, radiusKm);
+
+            var candidates = await _bagRepository.GetNearbyCandidatesAsync(
+                minLat,
+                maxLat,
+                minLng,
+                maxLng,
+                request.Status,
+                request.GetSearchQuery(),
+                request.Category);
+
+            var items = candidates
+                .Select(b => new
+                {
+                    Bag = b,
+                    Distance = GeoCalculator.CalculateDistanceKm(lat, lng, b.Store.Latitude!.Value, b.Store.Longitude!.Value)
+                })
+                .Where(x => x.Distance <= radiusKm);
+
+            var sortBy = request.GetNormalizedSortBy();
+            var desc = request.IsDescending();
+
+            var sorted = (sortBy, desc) switch
+            {
+                ("price", false)  => items.OrderBy(x => x.Bag.SalePrice).ThenBy(x => x.Distance),
+                ("price", true)   => items.OrderByDescending(x => x.Bag.SalePrice).ThenBy(x => x.Distance),
+                ("rating", false) => items.OrderBy(x => x.Bag.Store.RatingScore).ThenBy(x => x.Distance),
+                ("rating", true)  => items.OrderByDescending(x => x.Bag.Store.RatingScore).ThenBy(x => x.Distance),
+                ("name", false)   => items.OrderBy(x => x.Bag.Name).ThenBy(x => x.Distance),
+                ("name", true)    => items.OrderByDescending(x => x.Bag.Name).ThenBy(x => x.Distance),
+                (_, true)         => items.OrderByDescending(x => x.Distance),
+                _                 => items.OrderBy(x => x.Distance)
+            };
+
+            return sorted
+                .Take(limit)
+                .Select(x => x.Bag.ToResponse(x.Distance))
+                .ToList();
         }
 
         public async Task UpdateStatusAsync(Guid bagId, Guid ownerId, string status)

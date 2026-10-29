@@ -21,6 +21,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Responses
         public int ReviewCount { get; set; }
         public bool IsVerify { get; set; }
         public bool IsActive { get; set; }
+        public double? DistanceKm { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

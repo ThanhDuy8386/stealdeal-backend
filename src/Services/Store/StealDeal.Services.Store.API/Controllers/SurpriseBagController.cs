@@ -1,5 +1,9 @@
-﻿using System.Security.Claims;
+using System;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.Services.Interfaces;
@@ -17,7 +21,7 @@ namespace StealDeal.Services.Store.API.Controllers
             _bagService = bagService;
         }
 
-        // GET api/bags
+        // GET api/store/bags
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -25,7 +29,15 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // GET api/bags/{id}
+        // GET api/store/bags/nearby?latitude=10.76&longitude=106.66&radiusInKm=10&limit=20
+        [HttpGet("nearby")]
+        public async Task<IActionResult> GetNearby([FromQuery] NearbyQueryRequest request)
+        {
+            var result = await _bagService.GetNearbyAsync(request);
+            return Ok(result);
+        }
+
+        // GET api/store/bags/{id}
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -33,7 +45,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // GET api/bags/store/{storeId}
+        // GET api/store/bags/store/{storeId}
         [HttpGet("store/{storeId:guid}")]
         public async Task<IActionResult> GetByStore(Guid storeId)
         {
@@ -41,7 +53,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // POST api/bags  [Seller only]
+        // POST api/store/bags  [Seller only]
         [HttpPost]
         [Authorize(Roles = "Seller")]
         [Consumes("multipart/form-data")]
@@ -63,7 +75,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
-        // PUT api/bags/{id}  [Seller only]
+        // PUT api/store/bags/{id}  [Seller only]
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "Seller")]
         [Consumes("multipart/form-data")]
@@ -85,7 +97,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // DELETE api/bags/{id}  [Seller only]
+        // DELETE api/store/bags/{id}  [Seller only]
         [HttpDelete("{id:guid}")]
         [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Delete(Guid id)
@@ -94,7 +106,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return NoContent();
         }
 
-        // PATCH api/bags/{id}/status  [Seller only]
+        // PATCH api/store/bags/{id}/status  [Seller only]
         [HttpPatch("{id:guid}/status")]
         [Authorize(Roles = "Seller")]
         public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateBagStatusRequest request)

@@ -43,7 +43,7 @@ namespace StealDeal.Services.Store.Application.Mappings
         }
 
         // Entity -> Response DTO (requires Store + Categories navigation properties loaded)
-        public static SurpriseBagResponse ToResponse(this SurpriseBag bag)
+        public static SurpriseBagResponse ToResponse(this SurpriseBag bag, double? distanceKm = null)
         {
             return new SurpriseBagResponse
             {
@@ -64,6 +64,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 Categories = bag.Categories
                     .Select(c => c.ToResponse())
                     .ToList(),
+                DistanceKm = distanceKm,
                 CreatedAt = bag.CreatedAt
             };
         }
