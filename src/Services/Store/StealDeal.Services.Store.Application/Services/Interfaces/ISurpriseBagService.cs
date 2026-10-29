@@ -1,8 +1,9 @@
-using StealDeal.Services.Store.Application.DTOs.Requests;
-using StealDeal.Services.Store.Application.DTOs.Responses;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using StealDeal.Services.Store.Application.DTOs.Requests;
+using StealDeal.Services.Store.Application.DTOs.Responses;
 
 namespace StealDeal.Services.Store.Application.Services.Interfaces
 {
@@ -14,6 +15,7 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
         Task<SurpriseBagResponse> GetByIdAsync(Guid id);
         Task<List<SurpriseBagResponse>> GetAllAsync();        // có thể thêm filter/paging sau
         Task<List<SurpriseBagResponse>> GetByStoreIdAsync(Guid storeId);
+        Task<List<SurpriseBagResponse>> GetNearbyAsync(NearbyQueryRequest request);
         Task UpdateStatusAsync(Guid bagId, Guid ownerId, string status);
     }
 }

@@ -1,12 +1,17 @@
+using StealDeal.Services.Store.Application.Common;
+using StealDeal.Services.Store.Application.DTOs.Events;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.DTOs.Responses;
-using StealDeal.Services.Store.Application.DTOs.Events;
-using StealDeal.Services.Store.Domain.Models;
 using StealDeal.Services.Store.Application.Exceptions;
 using StealDeal.Services.Store.Application.Mappings;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using StealDeal.Services.Store.Domain.Interfaces;
+using StealDeal.Services.Store.Domain.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace StealDeal.Services.Store.Application.Services
 {
@@ -79,6 +84,29 @@ namespace StealDeal.Services.Store.Application.Services
         {
             var stores = await _storeRepository.GetAllAsync();
             return stores.Select(s => s.ToResponse()).ToList();
+        }
+
+        public async Task<List<StoreProfileResponse>> GetNearbyAsync(NearbyQueryRequest request)
+        {
+            var (lat, lng) = request.ResolveCoordinates();
+            var radiusKm = request.GetClampedRadius();
+            var limit = request.GetClampedLimit();
+
+            var (minLat, maxLat, minLng, maxLng) = GeoCalculator.CalculateBoundingBox(lat, lng, radiusKm);
+
+            var candidates = await _storeRepository.GetNearbyCandidatesAsync(minLat, maxLat, minLng, maxLng);
+
+            return candidates
+                .Select(s => new
+                {
+                    Store = s,
+                    Distance = GeoCalculator.CalculateDistanceKm(lat, lng, s.Latitude!.Value, s.Longitude!.Value)
+                })
+                .Where(x => x.Distance <= radiusKm)
+                .OrderBy(x => x.Distance)
+                .Take(limit)
+                .Select(x => x.Store.ToResponse(x.Distance))
+                .ToList();
         }
 
         public async Task VerifyStoreAsync(Guid storeId)

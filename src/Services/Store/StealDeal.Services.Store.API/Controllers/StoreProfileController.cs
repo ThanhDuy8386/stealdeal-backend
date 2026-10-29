@@ -1,4 +1,6 @@
-﻿using System.Security.Claims;
+using System;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Store.Application.DTOs.Requests;
@@ -17,7 +19,7 @@ namespace StealDeal.Services.Store.API.Controllers
             _storeService = storeService;
         }
 
-        // GET api/stores
+        // GET api/store/stores
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -25,7 +27,15 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // GET api/stores/{id}
+        // GET api/store/stores/nearby?latitude=10.76&longitude=106.66&radiusInKm=10&limit=20
+        [HttpGet("nearby")]
+        public async Task<IActionResult> GetNearby([FromQuery] NearbyQueryRequest request)
+        {
+            var result = await _storeService.GetNearbyAsync(request);
+            return Ok(result);
+        }
+
+        // GET api/store/stores/{id}
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -33,7 +43,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // GET api/stores/me  [Seller only]
+        // GET api/store/stores/me  [Seller only]
         [HttpGet("me")]
         [Authorize(Roles = "Seller")]
         public async Task<IActionResult> GetMyStore()
@@ -43,18 +53,17 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // POST api/stores  [Customer or Seller]
+        // POST api/store/stores  [Customer or Seller]
         [HttpPost]
         [Authorize(Roles = "Customer,Seller")]
         public async Task<IActionResult> Create([FromBody] CreateStoreRequest request)
         {
             var ownerId = GetCurrentUserId();
             var result = await _storeService.CreateAsync(ownerId, request);
-            // var result = await _storeService.CreateAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
-        // PUT api/stores/{id}  [Seller only]
+        // PUT api/store/stores/{id}  [Seller only]
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStoreRequest request)
@@ -64,7 +73,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return Ok(result);
         }
 
-        // PATCH api/stores/{id}/verify  [Admin only]
+        // PATCH api/store/stores/{id}/verify  [Admin only]
         [HttpPatch("{id:guid}/verify")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> Verify(Guid id)
@@ -73,7 +82,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return NoContent();
         }
 
-        // DELETE api/stores/{id}/reject  [Admin or SuperAdmin]
+        // DELETE api/store/stores/{id}/reject  [Admin or SuperAdmin]
         [HttpDelete("{id:guid}/reject")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> RejectPendingStore(Guid id)
@@ -82,7 +91,7 @@ namespace StealDeal.Services.Store.API.Controllers
             return NoContent();
         }
 
-        // PATCH api/stores/{id}/toggle-active  [Admin only]
+        // PATCH api/store/stores/{id}/toggle-active  [Admin only]
         [HttpPatch("{id:guid}/toggle-active")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> ToggleActive(Guid id)

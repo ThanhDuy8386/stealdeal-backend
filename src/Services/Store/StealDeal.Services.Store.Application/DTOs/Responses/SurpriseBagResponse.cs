@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -21,6 +21,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Responses
         public DateTime ExpiryDate { get; set; }
         public string Status { get; set; } = null!;
         public List<CategoryResponse> Categories { get; set; } = new(); // từ N:N
+        public double? DistanceKm { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

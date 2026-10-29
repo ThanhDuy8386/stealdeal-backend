@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.DTOs.Responses;
 
@@ -10,6 +13,7 @@ namespace StealDeal.Services.Store.Application.Services.Interfaces
         Task<StoreProfileResponse> GetByIdAsync(Guid id);
         Task<StoreProfileResponse> GetMyStoreAsync(Guid ownerId);
         Task<List<StoreProfileResponse>> GetAllAsync();
+        Task<List<StoreProfileResponse>> GetNearbyAsync(NearbyQueryRequest request);
         Task<List<PendingStoreResponse>> GetPendingVerificationAsync();
         // Admin only
         Task VerifyStoreAsync(Guid storeId);

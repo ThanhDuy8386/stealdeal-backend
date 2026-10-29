@@ -4,18 +4,20 @@ using StealDeal.Services.Store.Domain.Models;
 using StealDeal.Services.Store.Infrastructure.Persistence;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace StealDeal.Services.Store.Infrastructure.Repositories
 {
     public class StoreProfileRepository : IStoreProfileRepository
     {
-        private ApplicationDbContext _context;
+        private readonly ApplicationDbContext _context;
 
         public StoreProfileRepository(ApplicationDbContext context)
         {
             _context = context;
         }
+
         public async Task AddAsync(StoreProfile entity)
         {
             await _context.StoreProfiles.AddAsync(entity);
@@ -43,6 +45,17 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
             return await _context.StoreProfiles.FirstOrDefaultAsync(x => x.Id == id);
         }
 
+        public async Task<List<StoreProfile>> GetNearbyCandidatesAsync(decimal minLat, decimal maxLat, decimal minLng, decimal maxLng)
+        {
+            return await _context.StoreProfiles
+                .AsNoTracking()
+                .Where(s => s.IsActive && s.IsVerify
+                    && s.Latitude.HasValue && s.Longitude.HasValue
+                    && s.Latitude.Value >= minLat && s.Latitude.Value <= maxLat
+                    && s.Longitude.Value >= minLng && s.Longitude.Value <= maxLng)
+                .ToListAsync();
+        }
+
         public void Update(StoreProfile entity)
         {
             _context.StoreProfiles.Update(entity);
@@ -55,7 +68,10 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
 
         public async Task<IEnumerable<StoreProfile>> GetPendingVerificationAsync()
         {
-            return await _context.StoreProfiles.Where(s => s.IsVerify == false).OrderBy(s => s.CreatedAt).ToListAsync();
+            return await _context.StoreProfiles
+                .Where(s => s.IsVerify == false)
+                .OrderBy(s => s.CreatedAt)
+                .ToListAsync();
         }
     }
 }

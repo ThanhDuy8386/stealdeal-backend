@@ -47,7 +47,7 @@ namespace StealDeal.Services.Store.Application.Mappings
         }
 
         // Entity -> Response DTO
-        public static StoreProfileResponse ToResponse(this StoreProfile store)
+        public static StoreProfileResponse ToResponse(this StoreProfile store, double? distanceKm = null)
         {
             return new StoreProfileResponse
             {
@@ -66,6 +66,7 @@ namespace StealDeal.Services.Store.Application.Mappings
                 ReviewCount = store.ReviewCount,
                 IsVerify = store.IsVerify,
                 IsActive = store.IsActive,
+                DistanceKm = distanceKm,
                 CreatedAt = store.CreatedAt
             };
         }
