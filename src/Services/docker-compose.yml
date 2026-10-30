@@ -1,5 +1,11 @@
 ﻿name: stealdeal-services
 
+x-api-logging: &api-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -55,6 +61,7 @@ services:
     build: ./Identity
     image: ${IDENTITY_IMAGE:-stealdeal-identity:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5158:5158"
     environment:
@@ -78,6 +85,7 @@ services:
     build: ./Notification
     image: ${NOTIFICATION_IMAGE:-stealdeal-notification:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5053:5053"
     environment:
@@ -100,6 +108,7 @@ services:
     build: ./Store
     image: ${STORE_IMAGE:-stealdeal-store:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5169:5169"
     environment:
@@ -125,6 +134,7 @@ services:
     build: ./Cart
     image: ${CART_IMAGE:-stealdeal-cart:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5185:5185"
     environment:
@@ -143,6 +153,7 @@ services:
     build: ./Order
     image: ${ORDER_IMAGE:-stealdeal-order:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5165:5165"
     environment:
@@ -170,6 +181,7 @@ services:
     build: ./Payment
     image: ${PAYMENT_IMAGE:-stealdeal-payment:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5155:5155"
     environment:
