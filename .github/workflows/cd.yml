@@ -291,7 +291,7 @@ jobs:
                       ("compose pull " + (targets | join(" ")))
                     ] else [] end)
                   + (if $compose_changed then [
-                      "compose up -d --no-build --force-recreate",
+                      "compose up -d --no-build",
                       "compose ps --status running",
                       "for service in identity-api notification-api store-api cart-api order-api payment-api; do compose ps --status running --services | grep -qx \"$service\"; done"
                     ] elif has_targets then [
