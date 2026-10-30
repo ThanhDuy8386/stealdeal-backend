@@ -139,9 +139,10 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
             var payload = Encoding.UTF8.GetString(body);
 
             _logger.LogInformation(
-                "Received message with RoutingKey: {RoutingKey}, DeliveryTag: {DeliveryTag}",
-                args.RoutingKey, args.DeliveryTag);
+                "Received message with RoutingKey: {RoutingKey}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
+                args.RoutingKey, args.BasicProperties.MessageId, args.DeliveryTag);
 
+            Guid? orderId = null;
             try
             {
                 //Deserialize payload của message thành objecct
@@ -155,6 +156,7 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
                     throw new InvalidOperationException("Message payload could not be deserialized into CreateOrderEvent.");
                 }
 
+                orderId = @event.OrderId;
                 using var scope = _scopeFactory.CreateScope();
                 //gọi handler ra để xử lý
                 var handler = scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<CreateOrderEvent>>();
@@ -163,7 +165,8 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
                 //handler thực hiện business logic
                 await handler.HandleAsync(@event, context, args.CancellationToken);
 
-                _logger.LogInformation("Processed trừ hàng cho đơn id: {OrderId}", @event.OrderId);
+                _logger.LogInformation("Processed trừ hàng cho đơn id: {OrderId}, MessageId: {MessageId}",
+                    @event.OrderId, args.BasicProperties.MessageId);
 
                 // Acknowledge the message
                 if (_channel != null)
@@ -173,7 +176,9 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process message with DeliveryTag: {DeliveryTag}", args.DeliveryTag);
+                _logger.LogError(ex,
+                    "Failed to process message with OrderId: {OrderId}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
+                    orderId, args.BasicProperties.MessageId, args.DeliveryTag);
 
                 // Nack without requeuing to prevent infinite loops on malformed messages.
                 // In production, you would route to a DLQ instead.

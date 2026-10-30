@@ -147,8 +147,9 @@ namespace StealDeal.Services.Order.Infrastructure.BackgroundServices
             var payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
             _logger.LogInformation(
-                "Received order status message with RoutingKey: {RoutingKey}, DeliveryTag: {DeliveryTag}",
+                "Received order status message with RoutingKey: {RoutingKey}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
                 args.RoutingKey,
+                args.BasicProperties.MessageId,
                 args.DeliveryTag);
 
             try
@@ -167,8 +168,9 @@ namespace StealDeal.Services.Order.Infrastructure.BackgroundServices
             {
                 _logger.LogError(
                     ex,
-                    "Failed to process order status message with RoutingKey: {RoutingKey}, DeliveryTag: {DeliveryTag}",
+                    "Failed to process order status message with RoutingKey: {RoutingKey}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
                     args.RoutingKey,
+                    args.BasicProperties.MessageId,
                     args.DeliveryTag);
 
                 if (_channel != null)
