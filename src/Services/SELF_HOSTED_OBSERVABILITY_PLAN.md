@@ -113,8 +113,9 @@ Loki 3.7.0 trả HTTP 500 cho `/config?mode=diff` nhưng `/config` thường tr�
 - [x] Chạy node_exporter trên EC2 ứng dụng từ commit `6d7d33f`, bind `172.31.28.138:9100`, đo được `node_memory_MemAvailable_bytes` và `node_filesystem_avail_bytes` của host. Observability EC2 gọi được endpoint qua private network sau khi xử lý security group; cần rà soát rule thực tế không mở `9100` ra Internet.
 - [x] Thêm target `application-node` vào Prometheus từ commit `aa7b844`, kiểm tra `promtool` thành công rồi recreate riêng Prometheus. Grafana Explore trả `up{job="application-node"}=1` và `node_memory_MemAvailable_bytes` khoảng 5,4 tỷ byte (người vận hành xác nhận); metric đĩa `/` đã được kiểm tra qua endpoint exporter.
 - [x] Chạy cAdvisor `v0.60.6` trên EC2 ứng dụng từ commit `add04fc`, bind `172.31.28.138:8080`. Container healthy, Docker factory đăng ký thành công; endpoint local trả 15 series `container_memory_working_set_bytes` và 15 series `container_cpu_usage_seconds_total` với `name` theo container. Observability EC2 gọi `/metrics` được HTTP 200 qua private IP; cần rà soát rule inbound `8080` thực tế chỉ từ security group observability.
-- [ ] Thêm target `application-containers` vào Prometheus, kiểm tra cấu hình và xác nhận `up=1` cùng metric CPU/RAM từng container trên Grafana.
-- [ ] Trong Grafana, tạo log view theo service và dashboard: CPU/RAM/disk host, CPU/RAM container, `up` của scrape targets, tốc độ log ingest và dung lượng Loki/Prometheus.
+- [x] Thêm target `application-containers` vào Prometheus từ commit `d9e9211`; cấu hình Prometheus hợp lệ, container healthy, Grafana trả `up=1`, RAM container và CPU `order-api` theo `rate(...[5m])` (người vận hành xác nhận).
+- [ ] Provision dashboard Grafana cho CPU/RAM/disk host, CPU/RAM container và `up` của scrape targets; xác nhận dữ liệu trên giao diện.
+- [ ] Tạo log view theo service và bổ sung tốc độ log ingest, dung lượng Loki/Prometheus.
 - [ ] Thử một flow order thành công và một lỗi publish/consumer có kiểm soát; tìm theo `OrderId`/`MessageId`. Tạm thời phân biệt thời gian EC2 ứng dụng **chủ động tắt** với sự cố exporter để tránh báo động giả.
 
 ### P4 — Kiểm thử vận hành và bàn giao

@@ -33,6 +33,12 @@ The `application-node` Prometheus job scrapes node_exporter on the application E
 
 The `application-containers` job scrapes cAdvisor on the same application EC2 at `172.31.28.138:8080`. cAdvisor requires privileged host access and exposes a web UI/API as well as metrics; allow TCP 8080 only from the observability EC2 security group. Filter dashboard queries to `name!=""` to exclude the root cgroup and identify containers by their `name` label. cAdvisor filesystem metrics do not directly measure Docker JSON log file sizes.
 
+## Grafana dashboard
+
+`grafana/provisioning/dashboards/` provisions the **StealDeal / Infrastructure** dashboard from the repository. It shows scrape availability, both hosts' CPU/RAM/root-disk usage, and application-container CPU/RAM. Container CPU is a percentage of **one CPU core**: 100% means one fully used core, not 100% of the entire instance. The dashboard uses a one-hour range and refreshes every 30 seconds. A blank interval before the exporters were deployed is expected.
+
+The dashboard is read-only in Grafana. Edit its JSON in the repository, deploy the files to the observability EC2, and recreate only the Grafana container to load changes. Do not remove the Grafana data volume; provisioned datasources and the existing admin account remain intact. This dashboard does not yet include Loki log ingestion/storage or an interactive log view; those are separate P3 tasks.
+
 ## Retention
 
 Loki uses 72-hour retention through the compactor. Prometheus retains 3 days or 2 GB of blocks, whichever is reached first. Neither policy is a hard disk quota: WAL, compaction and delayed Loki deletion can temporarily use additional space. Check `df -h /` and Docker volume sizes regularly. All container stdout logs have Docker rotation (`10m` × 3 files).

@@ -1,0 +1,107 @@
+{
+  "id": null,
+  "uid": "stealdeal-infrastructure",
+  "title": "StealDeal / Infrastructure",
+  "tags": ["stealdeal", "infrastructure", "capstone"],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Application node exporter",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "refId": "A", "expr": "up{job=\"application-node\"}", "instant": true }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 2,
+      "title": "Application cAdvisor",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "refId": "A", "expr": "up{job=\"application-containers\"}", "instant": true }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 3,
+      "title": "Application RAM available",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "refId": "A", "expr": "node_memory_MemAvailable_bytes{job=\"application-node\"}", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 4,
+      "title": "Application disk available (root)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "refId": "A", "expr": "node_filesystem_avail_bytes{job=\"application-node\",mountpoint=\"/\"}", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 5,
+      "title": "Host CPU used (%)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "refId": "A", "expr": "100 * (1 - avg by (job) (rate(node_cpu_seconds_total{job=~\"application-node|observability-node\",mode=\"idle\"}[5m])))", "legendFormat": "{{job}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6,
+      "title": "Host RAM used (%)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=~\"application-node|observability-node\"} / node_memory_MemTotal_bytes{job=~\"application-node|observability-node\"})", "legendFormat": "{{job}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "title": "Host root disk used (%)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "refId": "A", "expr": "100 * (1 - node_filesystem_avail_bytes{job=~\"application-node|observability-node\",mountpoint=\"/\"} / node_filesystem_size_bytes{job=~\"application-node|observability-node\",mountpoint=\"/\"})", "legendFormat": "{{job}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "title": "Container CPU (% of one core)",
+      "description": "100% means one CPU core fully used; a container can exceed 100% when using multiple cores.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "refId": "A", "expr": "100 * sum by (name) (rate(container_cpu_usage_seconds_total{job=\"application-containers\",name!=\"\"}[5m]))", "legendFormat": "{{name}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "title": "Container RAM working set",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 9 },
+      "targets": [{ "refId": "A", "expr": "container_memory_working_set_bytes{job=\"application-containers\",name!=\"\"}", "legendFormat": "{{name}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}
