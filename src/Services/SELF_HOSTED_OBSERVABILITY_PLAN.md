@@ -1,6 +1,6 @@
 # Kế hoạch self-host observability cho StealDeal
 
-Trạng thái: **P1 hoàn tất; P2 đang triển khai trên EC2 observability.** Phạm vi đợt đầu là log và metric. Tracing/Tempo và instrumentation OpenTelemetry trong ứng dụng để dành cho đợt sau.
+Trạng thái: **P1 và phần vận hành P2 hoàn tất; bắt đầu P3 trên EC2 ứng dụng.** Phạm vi đợt đầu là log và metric. Tracing/Tempo và instrumentation OpenTelemetry trong ứng dụng để dành cho đợt sau.
 
 ## 1. Mục tiêu và hiện trạng
 
@@ -69,7 +69,7 @@ Luồng lưu log là **ứng dụng → stdout → file log Docker trên EC2 ứ
 | --- | --- | --- |
 | Docker trên EC2 ứng dụng | `10m` × 3 file/container | Giới hạn bản log cục bộ; riêng Loki retention không giải phóng ổ ứng dụng |
 | Loki trên EC2 mới | **3 ngày** (`retention_period: 72h`) | Bật Compactor/`retention_enabled`, `delete_request_store: filesystem`, TSDB index period 24h; xóa bất đồng bộ, không tức thì |
-| Prometheus trên EC2 mới | **3 ngày**, thêm `--storage.tsdb.retention.size=2GB` để thử nghiệm | Dung lượng thực có thể vượt ngưỡng trong lúc WAL/compaction; đo rồi điều chỉnh |
+| Prometheus trên EC2 mới | **3 ngày hoặc 2 GB**, cấu hình trong `storage.tsdb.retention` của `prometheus.yml` | Dung lượng thực có thể vượt ngưỡng trong lúc WAL/compaction; đo rồi điều chỉnh |
 | Grafana | Giữ dashboards/provisioning trên volume riêng | Không xóa Grafana volume khi muốn dọn telemetry |
 
 Không xóa thủ công thư mục dữ liệu Loki/Prometheus khi chúng đang chạy. Đặt cảnh báo hoặc kiểm tra disk ở ngưỡng khoảng **70% và 85%**; Loki filesystem retention không tự phản ứng với ổ sắp đầy. Khi cả hai EC2 tắt, không có dữ liệu mới; job dọn dữ liệu sẽ tiếp tục khi observability EC2 bật. EBS tính theo **GiB đã cấp**, nên retention giữ ổ không đầy nhưng không tự hạ hóa đơn volume 40 GiB.
@@ -98,14 +98,17 @@ Kiểm thử lỗi kỹ thuật `Warning`/`Error` và tìm lại flow qua Grafan
 
 ### P2 — Provision EC2 observability
 
-- [ ] Tạo `c7i-flex.large` với Ubuntu Server LTS x86_64 bản thường (không phải Ubuntu Pro/Marketplace AMI có phụ phí), 40 GiB gp3, IAM role cho SSM, security group như mục 3. Ghi rõ instance ID/SG ID vào tài liệu vận hành, không hardcode vào application code.
+- [x] Tạo `c7i-flex.large` với Ubuntu Server 26.04 x86_64, root volume 40 GiB (filesystem hiển thị 38 GiB), SSM hoạt động, cùng default VPC/subnet với EC2 ứng dụng; inbound TCP 3100 chỉ từ security group của EC2 ứng dụng. Loại volume gp3 và thông tin instance/SG ID sẽ đối chiếu trong bước bàn giao P4.
 - [x] Cài Docker Engine/Compose trên EC2 observability; `docker run --rm hello-world` chạy thành công (người vận hành xác nhận).
-- [ ] Đưa cấu hình trong `src/Services/observability` lên `/opt/stealdeal/observability` trên EC2. Compose/config đã được chuẩn bị trong repo với image tags cố định; chưa xác nhận chạy trên EC2.
-- [ ] Tạo Compose riêng cho Grafana, Loki monolithic, Prometheus và node_exporter; cấu hình volumes, health checks, restart policy, Grafana datasources và mật khẩu admin. Chỉ bind Grafana trên loopback nếu dùng SSM port forwarding; Loki/Prometheus chỉ ở mạng cần thiết.
-- [ ] Kiểm tra khởi động lại Compose sau reboot; xác nhận retention Loki thực sự chạy, Prometheus có giới hạn time/size và ổ còn headroom.
+- [x] Đưa cấu hình đã commit trên `duy-dev` (`af57bb5`) từ `src/Services/observability` lên `/opt/stealdeal/observability`; tạo `.env` với private IP và Grafana admin secret riêng trên EC2; `docker compose config --quiet` và pull image thành công.
+- [x] Chạy Compose riêng cho Grafana OSS, Loki monolithic, Prometheus và node_exporter với volumes, health checks, restart policy. Grafana chỉ bind loopback và truy cập được qua SSM tunnel; Prometheus/Loki datasources đều Test thành công. Prometheus scrape cả ba target nội bộ (`up=1`) và node_exporter trả metric RAM/đĩa.
+- [x] Reboot EC2 observability: Docker và các service tự chạy lại, Grafana/Loki endpoint vẫn sẵn sàng. Loki `/services` báo compactor `Running`; `/config` xác nhận retention 3 ngày, `retention_enabled: true`, `delete_request_store: filesystem`. Prometheus metric xác nhận retention 259200 giây và 2 GiB; root filesystem dùng 16% (32 GiB trống), RAM `available` khoảng 2,8 GiB. Xóa dữ liệu thật sau mốc retention thuộc P4.
+
+Loki 3.7.0 trả HTTP 500 cho `/config?mode=diff` nhưng `/config` thường trả 200; không thấy ảnh hưởng tới readiness, compactor hoặc Grafana datasource. Ghi nhận để đối chiếu khi cập nhật bản vá, không coi riêng lỗi endpoint này là bằng chứng retention thất bại.
 
 ### P3 — Thu thập từ EC2 ứng dụng
 
+- [x] Từ EC2 ứng dụng, gọi `http://172.31.16.59:3100/ready` qua private network thành công trước khi cài Alloy (người vận hành xác nhận).
 - [ ] Chạy Alloy với Docker discovery và `loki.source.docker`; chỉ chọn các container cần giám sát, thêm label service và tránh gửi lặp log nếu có nhiều agent.
 - [ ] Chạy node_exporter và cAdvisor trên EC2 ứng dụng. Prometheus scrape hai endpoint qua private IP; chỉ mở security group cho EC2 observability.
 - [ ] Trong Grafana, tạo log view theo service và dashboard: CPU/RAM/disk host, CPU/RAM container, `up` của scrape targets, tốc độ log ingest và dung lượng Loki/Prometheus.
@@ -115,7 +118,7 @@ Kiểm thử lỗi kỹ thuật `Warning`/`Error` và tìm lại flow qua Grafan
 
 - [ ] Stop/start **cả hai EC2**, xác nhận private connectivity và log/metric mới xuất hiện lại; dữ liệu chưa hết hạn vẫn xem được khi bật EC2 observability.
 - [ ] Chạy qua mốc retention bằng dữ liệu thử, xác nhận Loki/Prometheus dọn dữ liệu và disk không tăng mãi; kiểm tra Docker log rotation trên EC2 ứng dụng.
-- [ ] Ghi lại ảnh dashboard, sơ đồ, chi phí thực tế và quy trình SSM port forwarding trong README/portfolio. Dùng `docker compose config` để kiểm tra cấu hình trước mỗi lần deploy.
+- [ ] Ghi lại instance ID/SG ID trong tài liệu vận hành, xác nhận volume là gp3 và tags/budget thực tế; lưu ảnh dashboard, sơ đồ, chi phí và quy trình SSM port forwarding trong README/portfolio. Dùng `docker compose config` để kiểm tra cấu hình trước mỗi lần deploy.
 - [ ] Nếu muốn hoàn nguyên: dừng Alloy/exporters, dừng EC2 observability; chỉ xóa volume/instance sau khi đã quyết định không cần dữ liệu và dashboard cũ.
 
 ## 6. Dự toán và giới hạn chi phí
