@@ -20,7 +20,7 @@ EC2 ứng dụng (hiện có)                         EC2 observability (mới)
                                                 Grafana UI qua SSM port forwarding
 ```
 
-- **Alloy** chạy trên EC2 ứng dụng, dùng Docker discovery/`loki.source.docker` để đọc log và `loki.process` để gắn nhãn/lọc trước khi gửi tới Loki. Gắn nhãn có số giá trị hữu hạn như `service`, `environment`, `host`; giữ `OrderId`/`MessageId` trong nội dung log, **không dùng chúng làm Loki labels**.
+- **Alloy** chạy trên EC2 ứng dụng, dùng Docker discovery/`loki.source.docker` để đọc log; chỉ thêm `loki.process` nếu sau này cần lọc mẫu log nhiễu cụ thể. Gắn nhãn có số giá trị hữu hạn như `service`, `environment`, `host`; giữ `OrderId`/`MessageId` trong nội dung log, **không dùng chúng làm Loki labels**.
 - **node_exporter** và **cAdvisor** chạy trên EC2 ứng dụng; Prometheus trên EC2 mới scrape qua private IP mỗi 30–60 giây. Một node_exporter nữa chạy trên EC2 observability để đo disk/RAM của chính máy lưu log. Prometheus cũng scrape chính nó. Đây là luồng pull đơn giản, không cần bật Prometheus remote-write receiver.
 - **Loki monolithic**, **Prometheus single server**, **Grafana OSS** chạy bằng Docker Compose trên EC2 observability. Dùng named volumes/bind mounts trên gp3 EBS; filesystem store của Loki là đủ cho lab một node. Không triển khai Tempo, Mimir, S3, ALB hoặc NAT Gateway ở đợt đầu.
 - Việc triển khai Alloy không cản trở dùng OpenTelemetry sau này: khi làm tracing, .NET dùng OTel SDK để gửi OTLP tới Alloy, rồi Alloy chuyển trace sang Tempo.
@@ -109,7 +109,7 @@ Loki 3.7.0 trả HTTP 500 cho `/config?mode=diff` nhưng `/config` thường tr�
 ### P3 — Thu thập từ EC2 ứng dụng
 
 - [x] Từ EC2 ứng dụng, gọi `http://172.31.16.59:3100/ready` qua private network thành công trước khi cài Alloy (người vận hành xác nhận).
-- [ ] Chạy Alloy với Docker discovery và `loki.source.docker`; chỉ chọn các container cần giám sát, thêm label service và tránh gửi lặp log nếu có nhiều agent.
+- [x] Chạy Alloy riêng trên EC2 ứng dụng từ commit `77e7274`, với Docker discovery và `loki.source.docker`; chọn sáu API và RabbitMQ, thêm label `service`/`environment`/`host`, volume lưu vị trí đọc log và chỉ một agent trên host. `docker compose config` và `alloy validate` thành công, container `Up`; Grafana/Loki hiển thị log mới của một flow đặt hàng (người vận hành xác nhận).
 - [ ] Chạy node_exporter và cAdvisor trên EC2 ứng dụng. Prometheus scrape hai endpoint qua private IP; chỉ mở security group cho EC2 observability.
 - [ ] Trong Grafana, tạo log view theo service và dashboard: CPU/RAM/disk host, CPU/RAM container, `up` của scrape targets, tốc độ log ingest và dung lượng Loki/Prometheus.
 - [ ] Thử một flow order thành công và một lỗi publish/consumer có kiểm soát; tìm theo `OrderId`/`MessageId`. Tạm thời phân biệt thời gian EC2 ứng dụng **chủ động tắt** với sự cố exporter để tránh báo động giả.

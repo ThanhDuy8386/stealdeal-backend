@@ -23,5 +23,21 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${APP_PRIVATE_IP:?Set APP_PRIVATE_IP in .env}:9100
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   alloy_data:
