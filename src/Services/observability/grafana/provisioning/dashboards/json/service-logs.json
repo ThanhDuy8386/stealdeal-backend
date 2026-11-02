@@ -1,0 +1,90 @@
+{
+  "id": null,
+  "uid": "stealdeal-service-logs",
+  "title": "StealDeal / Service Logs",
+  "tags": ["stealdeal", "logs", "capstone"],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "custom",
+        "query": "identity-api,notification-api,store-api,cart-api,order-api,payment-api,rabbitmq",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          { "selected": false, "text": "identity-api", "value": "identity-api" },
+          { "selected": false, "text": "notification-api", "value": "notification-api" },
+          { "selected": false, "text": "store-api", "value": "store-api" },
+          { "selected": false, "text": "cart-api", "value": "cart-api" },
+          { "selected": false, "text": "order-api", "value": "order-api" },
+          { "selected": false, "text": "payment-api", "value": "payment-api" },
+          { "selected": false, "text": "rabbitmq", "value": "rabbitmq" }
+        ]
+      },
+      {
+        "name": "search",
+        "label": "Text / OrderId / MessageId (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": { "selected": true, "text": ".*", "value": ".*" },
+        "options": [{ "selected": true, "text": ".*", "value": ".*" }]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Log lines per 5 minutes by service",
+      "description": "Count of application log lines returned by Loki, grouped by service. This is not Loki's internal ingestion/storage metric.",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (count_over_time({environment=\"capstone\",host=\"application-ec2\",service=~\"$service\"}[5m]))",
+          "queryType": "range",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 2,
+      "title": "Service logs",
+      "description": "Select services above, then enter an OrderId, MessageId, or other regex in the search box. Use .* to show all messages.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "x": 0, "y": 7, "w": 24, "h": 17 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{environment=\"capstone\",host=\"application-ec2\",service=~\"$service\"} |~ \"${search:raw}\"",
+          "queryType": "range",
+          "maxLines": 1000
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

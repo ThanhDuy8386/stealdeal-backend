@@ -37,7 +37,9 @@ The `application-containers` job scrapes cAdvisor on the same application EC2 at
 
 `grafana/provisioning/dashboards/` provisions the **StealDeal / Infrastructure** dashboard from the repository. It shows scrape availability, both hosts' CPU/RAM/root-disk usage, and application-container CPU/RAM. Container CPU is a percentage of **one CPU core**: 100% means one fully used core, not 100% of the entire instance. The dashboard uses a one-hour range and refreshes every 30 seconds. A blank interval before the exporters were deployed is expected.
 
-The dashboard is read-only in Grafana. Edit its JSON in the repository, deploy the files to the observability EC2, and recreate only the Grafana container to load changes. Do not remove the Grafana data volume; provisioned datasources and the existing admin account remain intact. This dashboard does not yet include Loki log ingestion/storage or an interactive log view; those are separate P3 tasks.
+The dashboards are read-only in Grafana. Edit their JSON in the repository, deploy the files to the observability EC2, and recreate only the Grafana container to load changes. Do not remove the Grafana data volume; provisioned datasources and the existing admin account remain intact.
+
+**StealDeal / Service Logs** has a Service multi-select (the six APIs and RabbitMQ), a regex text box (default `.*`), a five-minute log-line-count chart, and a log panel. Paste an `OrderId` or `MessageId` into the text box to find matching lines; choose `All` services to follow a flow across services. The count chart ignores the text filter so it always shows total per-service log activity. This is a query over Loki logs, not Loki's own ingestion/storage telemetry. The service list is static and must be updated when a new service is added to Alloy. Internal Loki/Prometheus ingestion and storage metrics remain a separate P3 task.
 
 ## Retention
 
