@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+storage:
+  tsdb:
+    retention:
+      time: 3d
+      size: 2GB
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: observability-node
+    static_configs:
+      - targets: ["node-exporter:9100"]

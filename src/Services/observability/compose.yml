@@ -1,0 +1,101 @@
+name: stealdeal-observability
+
+x-logging: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  loki-volume-init:
+    image: busybox:1.37.0
+    command: ["chown", "-R", "10001:10001", "/loki"]
+    volumes:
+      - loki_data:/loki
+    restart: "no"
+    logging: *bounded-logs
+
+  loki:
+    image: grafana/loki:3.7.0
+    command: ["-config.file=/etc/loki/loki.yml"]
+    depends_on:
+      loki-volume-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    ports:
+      - "${OBS_PRIVATE_IP:?Set OBS_PRIVATE_IP in .env}:3100:3100"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    logging: *bounded-logs
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/bin/promtool", "check", "healthy", "--url=http://localhost:9090"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    logging: *bounded-logs
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.rootfs=/host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+    logging: *bounded-logs
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    secrets:
+      - grafana_admin_password
+    depends_on:
+      loki:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    logging: *bounded-logs
+
+secrets:
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password
+
+volumes:
+  loki_data:
+  prometheus_data:
+  grafana_data:

@@ -1,13 +1,13 @@
 # Kế hoạch self-host observability cho StealDeal
 
-Trạng thái: **Kế hoạch; chưa triển khai lên AWS.** Phạm vi đợt đầu là log và metric. Tracing/Tempo và instrumentation OpenTelemetry trong ứng dụng để dành cho đợt sau.
+Trạng thái: **P1 hoàn tất; P2 đang triển khai trên EC2 observability.** Phạm vi đợt đầu là log và metric. Tracing/Tempo và instrumentation OpenTelemetry trong ứng dụng để dành cho đợt sau.
 
 ## 1. Mục tiêu và hiện trạng
 
 - Xem log của Identity, Notification, Store, Cart, Order, Payment, RabbitMQ và các container khác trên một giao diện, không cần SSH hoặc `docker logs` trên EC2 ứng dụng.
 - Xem CPU, RAM, dung lượng đĩa của EC2 ứng dụng/observability; CPU và RAM theo container; nhận biết disk gần đầy hoặc exporter ngừng gửi dữ liệu.
 - Giữ chi phí observability thấp khi hệ thống chỉ bật lúc demo/kiểm thử. Dữ liệu cũ chỉ cần giữ vài ngày.
-- Repo hiện chạy Docker Compose trên **một EC2 ứng dụng tại `us-east-1`**; CI/CD qua ECR và SSM. `src/Services/docker-compose.yml` chưa đặt log rotation và mặc định `ASPNETCORE_ENVIRONMENT=Development` nếu không được ghi đè. Các API đang dùng `ILogger` với `Default: Information`; SQL query do worker quét outbox tạo nhiều log.
+- Repo hiện chạy Docker Compose trên **một EC2 ứng dụng tại `us-east-1`**; CI/CD qua ECR và SSM. Sáu API đã có Docker log rotation; bốn API dùng EF Core đã lọc SQL command thành công ở mức `Information`. Compose vẫn mặc định `ASPNETCORE_ENVIRONMENT=Development` nếu không được ghi đè.
 
 ## 2. Kiến trúc chọn cho đợt đầu
 
@@ -30,7 +30,7 @@ EC2 ứng dụng (hiện có)                         EC2 observability (mới)
 | Hạng mục | Thiết kế ban đầu |
 | --- | --- |
 | Region/VPC | `us-east-1`, cùng VPC và ưu tiên cùng Availability Zone với EC2 ứng dụng |
-| Instance | `t3.large` (2 vCPU, 8 GiB RAM), Linux x86_64; đo tải thật trước khi đổi loại |
+| Instance | **`c7i-flex.large`** (2 vCPU, 4 GiB RAM, x86_64) theo lựa chọn của người vận hành; đủ RAM khởi đầu cho lab nhẹ, vẫn phải đo thực tế. Dòng Flex có CPU nền 40%, không dùng tùy chọn CPU credit Standard/Unlimited của T3. |
 | Disk | **40 GiB gp3** làm root volume, đủ cho OS, Docker images và volumes của lab; 30 GiB có thể thử nếu đo được mức dùng thấp |
 | Tài khoản máy | SSM Agent + IAM instance role tối thiểu cho SSM; không đặt AWS access key trong Compose |
 | Kết nối Internet | Có outbound để cài Docker/pull images. Có thể dùng public subnet + public IPv4 nhưng **không mở inbound từ Internet**; tránh dựng NAT Gateway chỉ cho lab này |
@@ -87,15 +87,20 @@ Không xóa thủ công thư mục dữ liệu Loki/Prometheus khi chúng đang 
 
 - [x] Đo baseline khi không có user: trong 2 phút, Identity/Store/Order mỗi service có 12 dòng `Executed DbCommand`, Payment có 16; `docker system df` không thể hiện file log, thư mục Docker containers hiện 5,3 MB, EC2 ứng dụng còn 34 GB trống trên ổ 48 GB. Payment có thể có thêm query từ worker khác ngoài outbox.
 - [x] Đặt riêng EF Core command log mức `Warning` cho Identity, Store, Order, Payment; giữ `Default: Information` và `ILogger` hiện có, chưa cần thêm OTel SDK hay Serilog. Sau deploy, đo lại 2 phút không có user: cả bốn API đều `tong_dong=0, sql_command=0` (baseline lần lượt 12/12/12/16 dòng SQL).
-- [ ] Rà soát log nghiệp vụ publish, consume, retry, compensation: giữ mốc thành công/lỗi cần debug; thêm `OrderId`/`MessageId` vào nội dung log ở nơi có sẵn ID, không log payload nhạy cảm và không dùng ID làm Loki label. Đợt đầu có thể tìm text; JSON structured logging là cải tiến tiếp theo.
+- [x] Rà soát log nghiệp vụ publish, consume, retry, compensation: giữ mốc thành công/lỗi cần debug; thêm `MessageId` vào log nhận/xử lý/lỗi của consumer luồng order và `OrderId` vào log xử lý/lỗi khi đã parse được event. Outbox publish/lỗi đã ghi `MessageId` và retry count. Không log payload nhạy cảm, không dùng ID làm Loki label. Đợt đầu có thể tìm text; JSON structured logging là cải tiến tiếp theo.
 - [x] Kiểm tra log options và volume RabbitMQ trên EC2: tất cả container dùng `json-file` với `options={}`; RabbitMQ có volume ẩn danh tại `/var/lib/rabbitmq`. Đổi nhánh CD `compose_changed` sang `compose up -d --no-build` để chỉ tạo lại service có cấu hình đổi; kiểm tra ID container hạ tầng trước/sau deploy.
 - [x] Đặt Docker `json-file` rotation (`max-size: 10m`, `max-file: 3`) cho sáu API; sau CD, `docker inspect` xác nhận đủ sáu container có hai options này và ID của RabbitMQ/SQL Server/Redis giữ nguyên. Rotation giới hạn ổ EC2 ứng dụng, không giới hạn dung lượng Loki. Cân nhắc container hạ tầng/frontend trong bước riêng.
-- [ ] Đã thử flow thành công trên Docker: Order publish `order.created`, Store consume/xử lý và publish `inventory.reserved`, Payment consume/xử lý cùng `OrderId` với Store; log `Information` nghiệp vụ vẫn hiện. Còn cần thử lỗi có kiểm soát để xác nhận `Warning`/`Error`; sau P3 kiểm tra lại flow trong Grafana/Loki. Chỉ thêm Alloy `stage.drop` nếu còn mẫu log nhiễu rõ ràng.
+- [x] Thử flow thành công trên Docker: Order publish `order.created`, Store consume/xử lý rồi publish `inventory.reserved`, Payment consume/xử lý; `MessageId` khớp ở từng cặp publish/receive và Store/Payment có cùng `OrderId`. Log `Information` nghiệp vụ vẫn hiện.
+- [x] Thử compensation khi hủy thanh toán: Payment publish `payment.failed` và `inventory.release_requested`; Order/Store nhận đúng `MessageId`, Store ghi đã trả tồn kho cho cùng `OrderId`. Đây là nhánh nghiệp vụ dự kiến, không phải kiểm thử log `Error` kỹ thuật.
+- [x] Xác nhận trên ứng dụng đơn chuyển sang `PaymentFailed` và tồn kho được hoàn lại sau compensation (người vận hành xác nhận P1 hoàn tất).
+
+Kiểm thử lỗi kỹ thuật `Warning`/`Error` và tìm lại flow qua Grafana/Loki thuộc P3, khi pipeline log đã chạy; không cố tình làm hỏng RabbitMQ/database ở P1 chỉ để tạo log lỗi. Chỉ thêm Alloy `stage.drop` nếu còn mẫu log nhiễu rõ ràng.
 
 ### P2 — Provision EC2 observability
 
-- [ ] Tạo `t3.large`, 40 GiB gp3, IAM role cho SSM, security group như mục 3. Ghi rõ instance ID/SG ID vào tài liệu vận hành, không hardcode vào application code.
-- [ ] Cài Docker/Compose; đặt thư mục triển khai ví dụ `/opt/stealdeal/observability`. Pin image tags thay vì `latest`.
+- [ ] Tạo `c7i-flex.large` với Ubuntu Server LTS x86_64 bản thường (không phải Ubuntu Pro/Marketplace AMI có phụ phí), 40 GiB gp3, IAM role cho SSM, security group như mục 3. Ghi rõ instance ID/SG ID vào tài liệu vận hành, không hardcode vào application code.
+- [x] Cài Docker Engine/Compose trên EC2 observability; `docker run --rm hello-world` chạy thành công (người vận hành xác nhận).
+- [ ] Đưa cấu hình trong `src/Services/observability` lên `/opt/stealdeal/observability` trên EC2. Compose/config đã được chuẩn bị trong repo với image tags cố định; chưa xác nhận chạy trên EC2.
 - [ ] Tạo Compose riêng cho Grafana, Loki monolithic, Prometheus và node_exporter; cấu hình volumes, health checks, restart policy, Grafana datasources và mật khẩu admin. Chỉ bind Grafana trên loopback nếu dùng SSM port forwarding; Loki/Prometheus chỉ ở mạng cần thiết.
 - [ ] Kiểm tra khởi động lại Compose sau reboot; xác nhận retention Loki thực sự chạy, Prometheus có giới hạn time/size và ổ còn headroom.
 
@@ -115,15 +120,14 @@ Không xóa thủ công thư mục dữ liệu Loki/Prometheus khi chúng đang 
 
 ## 6. Dự toán và giới hạn chi phí
 
-Giá tham khảo Linux on-demand tại `us-east-1` (kiểm tra lại trước khi tạo): `t3.large` khoảng **$0.0835/giờ**; gp3 giả định **$0.08/GiB-tháng**; public IPv4 khoảng **$0.005/giờ khi được cấp**. Bảng dưới chỉ tính **EC2 observability mới**, 40 GiB gp3 tồn tại cả tháng, IPv4 tính trong giờ EC2 chạy, chưa tính snapshot, outbound data transfer, CPU credits, thuế hoặc tài nguyên hệ thống đã có.
+Giá **dự trù, cần xác nhận trên AWS Pricing Calculator/Launch Instance trước khi tạo** cho Linux/UNIX on-demand tại `us-east-1`: `c7i-flex.large` lấy tròn khoảng **$0.085/giờ** để giữ dư ngân sách; gp3 giả định **$0.08/GiB-tháng**; public IPv4 khoảng **$0.005/giờ khi được cấp**. Bảng dưới chỉ tính **EC2 observability mới**, 40 GiB gp3 tồn tại cả tháng, IPv4 tính trong giờ EC2 chạy, chưa tính snapshot, outbound data transfer, thuế hoặc tài nguyên hệ thống đã có. Ubuntu Server LTS bản thường dùng giá Linux/UNIX; Ubuntu Pro, Windows, RHEL/SUSE hoặc AMI Marketplace có thể có phí OS/software riêng.
 
-| Thời gian chạy/tháng | Compute | EBS 40 GiB | Public IPv4 | Tổng gần đúng |
-| ---: | ---: | ---: | ---: | ---: |
-| 50 giờ | $4.18 | $3.20 | $0.25 | **$7.63** |
-| 100 giờ | $8.35 | $3.20 | $0.50 | **$12.05** |
-| 730 giờ (quên tắt) | $60.96 | $3.20 | $3.65 | **$67.81** |
+| Instance | Thời gian chạy/tháng | Compute | EBS 40 GiB | Public IPv4 | Tổng gần đúng |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `c7i-flex.large` | 100 giờ | ~$8.50 | ~$3.20 | ~$0.50 | **~$12.20** |
+| `c7i-flex.large` | 730 giờ (quên tắt) | ~$62.05 | ~$3.20 | ~$3.65 | **~$68.90** |
 
-Mục tiêu vận hành: **≤100 giờ/tháng cho EC2 observability**, khoảng **$12–15/tháng** cho phần mới trong điều kiện trên. Sáu tháng ở mức 100 giờ/tháng sẽ khoảng **$72–90**, chừa phần credit cho EC2 ứng dụng và tài nguyên khác. Nếu quên tắt cả tháng, riêng EC2 mới có thể khoảng $68; vì thế không thể cam kết tổng tài khoản dưới $200 chỉ từ cấu hình này. Kiểm tra credit còn lại, AWS Cost Explorer/Budgets và thời gian bật thực tế hằng tuần.
+Mục tiêu vận hành: **≤100 giờ/tháng cho EC2 observability**, khoảng **$12–13/tháng** cho phần mới trong điều kiện trên. Sáu tháng ở mức 100 giờ/tháng sẽ khoảng **$73**, chừa phần credit cho EC2 ứng dụng và tài nguyên khác. Nếu quên tắt cả tháng, riêng EC2 mới có thể khoảng $69; vì thế không thể cam kết tổng tài khoản dưới $200 chỉ từ cấu hình này. Kiểm tra credit còn lại, AWS Cost Explorer/Budgets và thời gian bật thực tế hằng tuần. Sau khi chạy stack, đo `docker stats`, `free -h`, OOM events và độ trễ dashboard để xác nhận 4 GiB RAM đủ dùng.
 
 Không thêm NAT Gateway, ALB, EKS, Amazon Managed Grafana, Amazon Managed Service for Prometheus hoặc S3 trong đợt đầu. Nếu cần truy cập Grafana công khai sau này, lập dự toán riêng cho DNS/TLS và bảo mật trước khi mở cổng.
 
@@ -136,6 +140,6 @@ Không thêm NAT Gateway, ALB, EKS, Amazon Managed Grafana, Amazon Managed Servi
 
 ## Tài liệu tham khảo
 
-- [AWS Free Tier và credit](https://aws.amazon.com/free/) · [T3 pricing](https://aws.amazon.com/ec2/instance-types/t3/) · [EBS pricing](https://aws.amazon.com/ebs/pricing/) · [Public IPv4 pricing](https://aws.amazon.com/vpc/pricing/)
+- [AWS Free Tier và credit](https://aws.amazon.com/free/) · [C7i-flex specs](https://aws.amazon.com/ec2/instance-types/c7i/) · [EC2 On-Demand pricing](https://aws.amazon.com/ec2/pricing/on-demand/) · [EBS pricing](https://aws.amazon.com/ebs/pricing/) · [Public IPv4 pricing](https://aws.amazon.com/vpc/pricing/)
 - [Alloy Docker log source](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.docker/) · [Loki filesystem/retention](https://grafana.com/docs/loki/latest/operations/storage/filesystem/) · [Prometheus storage](https://prometheus.io/docs/prometheus/latest/storage/)
 - [Docker logging drivers và rotation](https://docs.docker.com/engine/logging/configure/) · [EF Core logging categories](https://learn.microsoft.com/ef/core/logging-events-diagnostics/simple-logging) · [Alloy log filtering](https://grafana.com/docs/alloy/latest/tutorials/send-logs-to-loki/) · [AWS Billing Free/Paid plans](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html)
