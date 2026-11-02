@@ -110,7 +110,9 @@ Loki 3.7.0 trả HTTP 500 cho `/config?mode=diff` nhưng `/config` thường tr�
 
 - [x] Từ EC2 ứng dụng, gọi `http://172.31.16.59:3100/ready` qua private network thành công trước khi cài Alloy (người vận hành xác nhận).
 - [x] Chạy Alloy riêng trên EC2 ứng dụng từ commit `77e7274`, với Docker discovery và `loki.source.docker`; chọn sáu API và RabbitMQ, thêm label `service`/`environment`/`host`, volume lưu vị trí đọc log và chỉ một agent trên host. `docker compose config` và `alloy validate` thành công, container `Up`; Grafana/Loki hiển thị log mới của một flow đặt hàng (người vận hành xác nhận).
-- [ ] Chạy node_exporter và cAdvisor trên EC2 ứng dụng. Prometheus scrape hai endpoint qua private IP; chỉ mở security group cho EC2 observability.
+- [x] Chạy node_exporter trên EC2 ứng dụng từ commit `6d7d33f`, bind `172.31.28.138:9100`, đo được `node_memory_MemAvailable_bytes` và `node_filesystem_avail_bytes` của host. Observability EC2 gọi được endpoint qua private network sau khi xử lý security group; cần rà soát rule thực tế không mở `9100` ra Internet.
+- [ ] Thêm target `application-node` vào Prometheus, kiểm tra cấu hình và `up=1` cùng metric RAM/đĩa trên Grafana.
+- [ ] Chạy cAdvisor trên EC2 ứng dụng; Prometheus scrape cổng `8080` qua private IP và giới hạn inbound chỉ từ security group observability.
 - [ ] Trong Grafana, tạo log view theo service và dashboard: CPU/RAM/disk host, CPU/RAM container, `up` của scrape targets, tốc độ log ingest và dung lượng Loki/Prometheus.
 - [ ] Thử một flow order thành công và một lỗi publish/consumer có kiểm soát; tìm theo `OrderId`/`MessageId`. Tạm thời phân biệt thời gian EC2 ứng dụng **chủ động tắt** với sự cố exporter để tránh báo động giả.
 
