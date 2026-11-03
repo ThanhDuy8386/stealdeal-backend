@@ -1,5 +1,7 @@
 # AWS Parameter Store Runtime Secrets — Implementation Runbook
 
+> Các mục 0–18 ghi nhận baseline đã triển khai ngày 2026-10-26 với tám secret. Bổ sung Gemini/Redis ngày 2026-11-03 ở mục 19 cập nhật contract hiện tại thành chín secret; phần AWS/EC2 của bổ sung này cần thực hiện và kiểm chứng theo hướng dẫn trước khi deploy.
+
 ## 0. Trạng thái implementation
 
 **Hoàn thành ngày 2026-10-26.** Backend production đã chuyển sang lấy runtime secret từ AWS Systems Manager Parameter Store.
@@ -670,3 +672,76 @@ Rotation và rollback là operational drill tùy chọn chưa thực hiện; run
 ## 18. Việc ngoài phạm vi secret flow cần xác nhận
 
 `docker-compose.yml` hiện dùng `MSSQL_PID: Developer`. Nếu đây là production thương mại, cần xác nhận license SQL Server hoặc chuyển sang edition/dịch vụ được cấp phép trước khi go-live.
+
+## 19. Bổ sung Gemini API key và Redis cho Store (2026-11-03)
+
+### 19.1. Thay đổi trong repository
+
+- Store nhận `Redis__ConnectionString=redis:6379` và chờ dependency Redis healthy.
+- Store nhận `Gemini__ApiKey` từ biến bắt buộc `GEMINI_API_KEY` của Compose.
+- `sync-backend-secrets.sh` yêu cầu đúng chín `SecureString`: tám parameter ở mục 11 và `/stealdeal/prod/GEMINI_API_KEY`. Danh sách required keys và bước đếm output đều đã được cập nhật.
+- CI cung cấp dummy `GEMINI_API_KEY`, kiểm tra Compose fail khi thiếu JWT hoặc Gemini key.
+- API key vẫn để trống trong tracked `appsettings.json`. Model và các cấu hình Gemini không nhạy cảm tiếp tục lấy từ image hiện tại.
+- Khi chạy Compose local, bổ sung `GEMINI_API_KEY` thật vào `src/Services/.env` bị Git ignore. `dotnet run` trực tiếp tiếp tục dùng environment variables hoặc .NET User Secrets.
+
+### 19.2. Chuẩn bị AWS và script trên EC2 trước khi push lên main
+
+Không để lượt CD chạy trong khoảng script và bộ parameter chưa khớp. Script cũ từ chối parameter thứ chín; script mới từ chối bộ chỉ có tám parameter. Nếu sync thất bại, `backend.env` cũ được giữ nguyên, container đang chạy không bị đổi bởi bước sync.
+
+1. Trên AWS Console, chọn đúng account/region `us-east-1`, vào Systems Manager → Parameter Store → Create parameter:
+   - Name: `/stealdeal/prod/GEMINI_API_KEY`.
+   - Tier: `Standard`.
+   - Type: `SecureString`.
+   - KMS key: AWS-managed `alias/aws/ssm`, giống baseline.
+   - Value: API key Gemini thật, không có newline hoặc khoảng trắng thừa.
+   - Tags: `Application=stealdeal`, `Environment=prod`, `ManagedBy=parameter-store`.
+2. Copy bản script đã sửa từ máy local lên một file staging ngoài Git checkout của EC2. Ví dụ PowerShell tại repository root, thay SSH user/host/key path theo server thực tế:
+
+   ```powershell
+   scp -i "C:\path\ec2.pem" .\src\Services\deployment\sync-backend-secrets.sh ubuntu@<EC2_HOST>:/tmp/stealdeal-sync-backend-secrets.sh
+   ```
+
+3. Trong SSH shell hoặc Session Manager shell trên EC2, chuẩn hóa line ending, kiểm tra cú pháp rồi cài script:
+
+   ```bash
+   sed -i 's/\r$//' /tmp/stealdeal-sync-backend-secrets.sh
+   bash -n /tmp/stealdeal-sync-backend-secrets.sh
+   sudo install -d -o root -g root -m 700 /opt/stealdeal/scripts
+   sudo install -o root -g root -m 700 \
+     /tmp/stealdeal-sync-backend-secrets.sh \
+     /opt/stealdeal/scripts/sync-backend-secrets.sh
+   sudo /opt/stealdeal/scripts/sync-backend-secrets.sh
+   sudo stat -c '%U %G %a' /opt/stealdeal/config/backend.env
+   sudo grep -q '^GEMINI_API_KEY=' /opt/stealdeal/config/backend.env \
+     && echo 'GEMINI_API_KEY is present in backend.env'
+   ```
+
+   Mong đợi: sync thành công và `root root 600`. Lệnh kiểm tra chỉ báo key tồn tại, không in giá trị. Không sửa Compose hoặc tracked script trực tiếp trong checkout server vì CD yêu cầu worktree sạch khi apply config.
+
+IAM policy baseline cho `/stealdeal/prod/*` đã bao phủ Gemini; không cần thêm quyền nếu policy thực tế vẫn đúng như mục 10. CD không tự cài lại script tại `/opt/stealdeal/scripts`; thao tác trên là bước riêng.
+
+### 19.3. Deploy đúng commit cấu hình mới
+
+Sau khi AWS/script đã sẵn sàng, commit và push các thay đổi repository lên `main`. CI/CD tự động của commit mới sẽ nhận `compose_changed=true`, checkout cấu hình mới trên EC2, sync chín secret rồi chạy `compose up -d --no-build` cho stack. Compose áp dụng environment mới của Store và dependency Redis; các image tag vẫn lấy từ `.env` nếu không có image mới cần deploy.
+
+Nếu cần chạy manual Backend CD cho thay đổi chỉ có configuration:
+
+| Input | Giá trị |
+|---|---|
+| `image_sha` | Full SHA 40 ký tự của commit mới đã push lên main |
+| `services` | `none` |
+| `compose_changed` | `true` |
+| `refresh_secrets` | `false` |
+| `run_migrator` | `false` |
+
+Nhánh config-only này áp dụng Compose của commit mới, dùng image tag hiện có và không pull/build image. Giả định image Store hiện tại đã chứa chatbot; nếu cần code chatbot mới, deploy image Store của commit tương ứng qua CI/CD thông thường.
+
+Không re-run một CD cũ để lấy config mới: re-run dùng commit/manifest của lượt cũ, có thể không checkout Compose mới hoặc checkout lại bản cũ. Chỉ re-run lượt CD thuộc đúng commit mới khi cần thử lại.
+
+### 19.4. Kiểm chứng và refresh các lần sau
+
+- Kiểm tra `store-api` running và Redis healthy.
+- Gửi tin nhắn chat có xác thực, kiểm tra nhận phản hồi Gemini.
+- Gọi API history hoặc gửi tiếp câu hỏi dựa vào tin nhắn trước để xác nhận Redis lưu lịch sử.
+- CD hiện chỉ kiểm tra container running và trang gốc nginx; kết quả CD thành công chưa thay thế kiểm thử chatbot.
+- Những lần chỉ đổi value Gemini trên PS: chạy manual Backend CD với `services=store`, `refresh_secrets=true`, `compose_changed=false`, `run_migrator=false`, để trống `image_sha`. Workflow sync file rồi force-recreate riêng Store bằng image hiện tại.
