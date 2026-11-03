@@ -1,6 +1,6 @@
 # Observability EC2
 
-This directory is deployed to `/opt/stealdeal/observability` on the dedicated EC2. It is separate from the application Compose project. The first phase runs Grafana OSS, Loki, Prometheus and node_exporter; Alloy and application exporters are added to the application EC2 in P3.
+This directory is deployed to `/opt/stealdeal/observability` on the dedicated EC2. It is separate from the application Compose project. The deployed MVP runs Grafana OSS, Loki, Prometheus and node_exporter here; Alloy, node_exporter and cAdvisor run on the application EC2. See [the observability plan and stop/start runbook](../SELF_HOSTED_OBSERVABILITY_PLAN.md) for current verification status and operating modes.
 
 ## Before starting
 
@@ -39,7 +39,7 @@ The `application-containers` job scrapes cAdvisor on the same application EC2 at
 
 The dashboards are read-only in Grafana. Edit their JSON in the repository, deploy the files to the observability EC2, and recreate only the Grafana container to load changes. Do not remove the Grafana data volume; provisioned datasources and the existing admin account remain intact.
 
-**StealDeal / Service Logs** has a Service multi-select (the six APIs and RabbitMQ), a regex text box (default `.*`), a five-minute log-line-count chart, and a log panel. Paste an `OrderId` or `MessageId` into the text box to find matching lines; choose `All` services to follow a flow across services. The count chart ignores the text filter so it always shows total per-service log activity. This is a query over Loki logs, not Loki's own ingestion/storage telemetry. The service list is static and must be updated when a new service is added to Alloy. Internal Loki/Prometheus ingestion and storage metrics remain a separate P3 task.
+**StealDeal / Service Logs** has a Service multi-select (the six APIs and RabbitMQ), a regex text box (default `.*`), a five-minute log-line-count chart, and a log panel. Paste an `OrderId` or `MessageId` into the text box to find matching lines; choose `All` services to follow a flow across services. The count chart ignores the text filter so it always shows total per-service log activity. This is a query over Loki logs, not Loki's own ingestion/storage telemetry. The service list is static and must be updated when a new service is added to Alloy. Internal Loki/Prometheus ingestion and storage metrics are optional future work, not required for this MVP.
 
 ## Retention
 
