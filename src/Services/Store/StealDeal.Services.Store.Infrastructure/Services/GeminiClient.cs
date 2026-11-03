@@ -70,25 +70,12 @@ namespace StealDeal.Services.Store.Infrastructure.Services
 
             var responseJson = await SendGeminiRequestAsync(endpoint, instruction, contents, tools, cancellationToken);
 
-            if (TryExtractFunctionCall(responseJson, out var functionName, out var functionArgs) && toolHandler != null)
+            if (TryExtractFunctionCall(responseJson, out var functionName, out var functionArgs, out var modelContent) && toolHandler != null)
             {
                 var toolResult = await toolHandler(functionName, functionArgs);
 
-                contents.Add(new
-                {
-                    role = "model",
-                    parts = new object[]
-                    {
-                        new
-                        {
-                            functionCall = new
-                            {
-                                name = functionName,
-                                args = functionArgs.ValueKind != JsonValueKind.Undefined ? (object)functionArgs : new { }
-                            }
-                        }
-                    }
-                });
+                // Preserve Gemini's authentic model turn (including thought_signature for Gemini 3.5 reasoning)
+                contents.Add(modelContent);
 
                 var responsePayload = toolResult is System.Collections.IEnumerable and not string and not IDictionary<string, object>
                     ? new { result = toolResult }
@@ -96,7 +83,7 @@ namespace StealDeal.Services.Store.Infrastructure.Services
 
                 contents.Add(new
                 {
-                    role = "function",
+                    role = "user",
                     parts = new object[]
                     {
                         new
@@ -172,10 +159,11 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             return await response.Content.ReadFromJsonAsync<JsonElement>(JsonOptions, cancellationToken);
         }
 
-        private static bool TryExtractFunctionCall(JsonElement root, out string name, out JsonElement args)
+        private static bool TryExtractFunctionCall(JsonElement root, out string name, out JsonElement args, out JsonElement modelContent)
         {
             name = string.Empty;
             args = default;
+            modelContent = default;
 
             if (root.TryGetProperty("candidates", out var candidates) &&
                 candidates.GetArrayLength() > 0 &&
@@ -189,6 +177,7 @@ namespace StealDeal.Services.Store.Infrastructure.Services
                     {
                         name = nameElement.GetString() ?? string.Empty;
                         args = fc.TryGetProperty("args", out var a) ? a : default;
+                        modelContent = content;
                         return true;
                     }
                 }
