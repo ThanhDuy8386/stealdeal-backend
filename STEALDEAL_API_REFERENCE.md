@@ -354,8 +354,9 @@ permissions, including the ability to manage accounts with either admin role.
 | `PATCH` | `/api/reviews/{id}/report` | Bearer | none | `204 NoContent` |
 | `DELETE` | `/api/reviews/{id}/report` | Owning Seller, Admin, or SuperAdmin | none | `204 NoContent` |
 | `DELETE` | `/api/reviews/{id}` | Admin or SuperAdmin | none | `204 NoContent` |
-| `POST` | `/api/store/chat` | Public | `ChatRequest` | `200 ChatResponse` |
-| `DELETE` | `/api/store/chat/{sessionId}` | Public | none | `204 NoContent` |
+| `POST` | `/api/store/chat` | Bearer | `ChatRequest` | `200 ChatResponse` |
+| `GET` | `/api/store/chat` | Bearer | none | `200 ChatTurn[]` |
+| `DELETE` | `/api/store/chat` | Bearer | none | `204 NoContent` |
 
 Store authorization is enforced. Bag deletion is Seller-only but does not yet
 verify that the seller owns the bag.
@@ -680,6 +681,11 @@ export interface StoreReviewResponse {
   repliedAt: ISODateTime | null;
   createdAt: ISODateTime;
   isReported?: boolean; // omitted from public responses; present in seller dashboard & admin endpoints
+}
+
+export interface ChatTurn {
+  role: "user" | "model";
+  content: string;
 }
 
 export interface ChatResponse {

@@ -34,7 +34,7 @@ namespace StealDeal.Services.Store.Application.Services
             _categoryRepository = categoryRepository;
         }
 
-        public async Task<ChatResponse> SendMessageAsync(ChatRequest request, CancellationToken cancellationToken = default)
+        public async Task<ChatResponse> SendMessageAsync(Guid userId, ChatRequest request, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(request.Message))
             {
@@ -47,10 +47,7 @@ namespace StealDeal.Services.Store.Application.Services
                 throw new BadRequestException("Message must not exceed 500 characters.");
             }
 
-            var sessionId = string.IsNullOrWhiteSpace(request.SessionId)
-                ? Guid.NewGuid().ToString()
-                : request.SessionId.Trim();
-
+            var sessionId = userId.ToString();
             var history = await _sessionStore.GetRecentTurnsAsync(sessionId, cancellationToken);
 
             // Dynamically load active categories to inform Gemini
@@ -184,14 +181,14 @@ namespace StealDeal.Services.Store.Application.Services
             };
         }
 
-        public async Task ClearSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        public async Task<List<ChatTurn>> GetSessionHistoryAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(sessionId))
-            {
-                return;
-            }
+            return await _sessionStore.GetRecentTurnsAsync(userId.ToString(), cancellationToken);
+        }
 
-            await _sessionStore.ClearSessionAsync(sessionId.Trim(), cancellationToken);
+        public async Task ClearSessionAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            await _sessionStore.ClearSessionAsync(userId.ToString(), cancellationToken);
         }
 
         private static List<object> BuildToolDeclarations(string activeCategories)
