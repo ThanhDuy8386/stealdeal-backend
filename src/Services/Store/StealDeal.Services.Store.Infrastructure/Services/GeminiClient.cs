@@ -33,6 +33,8 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             IReadOnlyList<ChatTurn> history,
             string userMessage,
             string? systemInstruction = null,
+            IEnumerable<object>? tools = null,
+            Func<string, JsonElement, Task<object>>? toolHandler = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_settings.ApiKey))
@@ -42,7 +44,7 @@ namespace StealDeal.Services.Store.Infrastructure.Services
 
             var instruction = string.IsNullOrWhiteSpace(systemInstruction)
                 ? _settings.SystemInstruction
-                : systemInstruction;
+                : $"{_settings.SystemInstruction}\n\nContext:\n{systemInstruction}";
 
             var contents = new List<object>();
 
@@ -53,7 +55,7 @@ namespace StealDeal.Services.Store.Infrastructure.Services
                 contents.Add(new
                 {
                     role,
-                    parts = new[] { new { text = turn.Content } }
+                    parts = new object[] { new { text = turn.Content } }
                 });
             }
 
@@ -61,23 +63,82 @@ namespace StealDeal.Services.Store.Infrastructure.Services
             contents.Add(new
             {
                 role = "user",
-                parts = new[] { new { text = userMessage } }
+                parts = new object[] { new { text = userMessage } }
             });
 
-            var requestBody = new
+            var endpoint = $"models/{_settings.Model}:generateContent?key={Uri.EscapeDataString(_settings.ApiKey)}";
+
+            var responseJson = await SendGeminiRequestAsync(endpoint, instruction, contents, tools, cancellationToken);
+
+            if (TryExtractFunctionCall(responseJson, out var functionName, out var functionArgs, out var modelContent) && toolHandler != null)
             {
-                system_instruction = string.IsNullOrWhiteSpace(instruction)
-                    ? null
-                    : new { parts = new[] { new { text = instruction } } },
-                contents,
-                generationConfig = new
+                var toolResult = await toolHandler(functionName, functionArgs);
+
+                // Preserve Gemini's authentic model turn (including thought_signature for Gemini 3.5 reasoning)
+                contents.Add(modelContent);
+
+                var responsePayload = toolResult is System.Collections.IEnumerable and not string and not IDictionary<string, object>
+                    ? new { result = toolResult }
+                    : toolResult;
+
+                contents.Add(new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new
+                        {
+                            functionResponse = new
+                            {
+                                name = functionName,
+                                response = responsePayload
+                            }
+                        }
+                    }
+                });
+
+                // Post second request to get the synthesized reply
+                var secondResponseJson = await SendGeminiRequestAsync(endpoint, instruction, contents, tools, cancellationToken);
+                if (TryExtractText(secondResponseJson, out var secondText))
+                {
+                    return secondText;
+                }
+            }
+
+            if (TryExtractText(responseJson, out var replyText))
+            {
+                return replyText;
+            }
+
+            return "I apologize, but I could not generate a response. Please try again.";
+        }
+
+        private async Task<JsonElement> SendGeminiRequestAsync(
+            string endpoint,
+            string? systemInstruction,
+            List<object> contents,
+            IEnumerable<object>? tools,
+            CancellationToken cancellationToken)
+        {
+            var requestBody = new Dictionary<string, object?>
+            {
+                ["contents"] = contents,
+                ["generationConfig"] = new
                 {
                     temperature = _settings.Temperature,
                     maxOutputTokens = _settings.MaxOutputTokens
                 }
             };
 
-            var endpoint = $"models/{_settings.Model}:generateContent?key={Uri.EscapeDataString(_settings.ApiKey)}";
+            if (!string.IsNullOrWhiteSpace(systemInstruction))
+            {
+                requestBody["system_instruction"] = new { parts = new[] { new { text = systemInstruction } } };
+            }
+
+            if (tools != null)
+            {
+                requestBody["tools"] = tools;
+            }
 
             HttpResponseMessage response;
             try
@@ -95,19 +156,56 @@ namespace StealDeal.Services.Store.Infrastructure.Services
                 throw new BadRequestException($"AI service returned error ({response.StatusCode}): {errorBody}");
             }
 
-            var responseJson = await response.Content.ReadFromJsonAsync<JsonElement>(JsonOptions, cancellationToken);
+            return await response.Content.ReadFromJsonAsync<JsonElement>(JsonOptions, cancellationToken);
+        }
 
-            if (responseJson.TryGetProperty("candidates", out var candidates) &&
+        private static bool TryExtractFunctionCall(JsonElement root, out string name, out JsonElement args, out JsonElement modelContent)
+        {
+            name = string.Empty;
+            args = default;
+            modelContent = default;
+
+            if (root.TryGetProperty("candidates", out var candidates) &&
                 candidates.GetArrayLength() > 0 &&
                 candidates[0].TryGetProperty("content", out var content) &&
-                content.TryGetProperty("parts", out var parts) &&
-                parts.GetArrayLength() > 0 &&
-                parts[0].TryGetProperty("text", out var textElement))
+                content.TryGetProperty("parts", out var parts))
             {
-                return textElement.GetString() ?? string.Empty;
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("functionCall", out var fc) &&
+                        fc.TryGetProperty("name", out var nameElement))
+                    {
+                        name = nameElement.GetString() ?? string.Empty;
+                        args = fc.TryGetProperty("args", out var a) ? a : default;
+                        modelContent = content;
+                        return true;
+                    }
+                }
             }
 
-            return "I apologize, but I could not generate a response. Please try again.";
+            return false;
+        }
+
+        private static bool TryExtractText(JsonElement root, out string text)
+        {
+            text = string.Empty;
+
+            if (root.TryGetProperty("candidates", out var candidates) &&
+                candidates.GetArrayLength() > 0 &&
+                candidates[0].TryGetProperty("content", out var content) &&
+                content.TryGetProperty("parts", out var parts))
+            {
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("text", out var textElem))
+                    {
+                        text = textElem.GetString() ?? string.Empty;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
     }
 }
