@@ -238,6 +238,7 @@ jobs:
             'AWS_SECRET_KEY=ci-only-validation-secret-key' \
             'BREVO_API_KEY=ci-only-validation-brevo-api-key' \
             'GEOAPIFY_API_KEY=ci-only-validation-geoapify-api-key' \
+            'GEMINI_API_KEY=ci-only-validation-gemini-api-key' \
             'VNPAY_TMN_CODE=ci-only-validation-tmn-code' \
             'VNPAY_HASH_SECRET=ci-only-validation-hash-secret' \
             > "$CI_ENV_FILE"
@@ -249,15 +250,17 @@ jobs:
             -f src/Services/docker-compose.yml \
             config --quiet
 
-          grep -v '^JWT_SECRET=' "$CI_ENV_FILE" > "$CI_MISSING_ENV_FILE"
+          for required_key in JWT_SECRET GEMINI_API_KEY; do
+            grep -v "^${required_key}=" "$CI_ENV_FILE" > "$CI_MISSING_ENV_FILE"
 
-          if docker compose \
-            --env-file "$CI_MISSING_ENV_FILE" \
-            -f src/Services/docker-compose.yml \
-            config --quiet >/dev/null 2>&1; then
-            echo '::error::Compose accepted a missing required JWT_SECRET'
-            exit 1
-          fi
+            if docker compose \
+              --env-file "$CI_MISSING_ENV_FILE" \
+              -f src/Services/docker-compose.yml \
+              config --quiet >/dev/null 2>&1; then
+              echo "::error::Compose accepted a missing required $required_key"
+              exit 1
+            fi
+          done
 
       - name: Upload deployment manifest
         uses: actions/upload-artifact@v4

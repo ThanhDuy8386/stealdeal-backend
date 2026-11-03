@@ -118,6 +118,8 @@ services:
       Aws__AccessKeyId: ${AWS_ACCESS_KEY:?AWS_ACCESS_KEY is required}
       Aws__SecretAccessKey: ${AWS_SECRET_KEY:?AWS_SECRET_KEY is required}
       Geoapify__ApiKey: ${GEOAPIFY_API_KEY:?GEOAPIFY_API_KEY is required}
+      Gemini__ApiKey: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      Redis__ConnectionString: redis:6379
       RabbitMq__HostName: rabbitmq
       RabbitMq__Port: 5672
       RabbitMq__UserName: guest
@@ -128,6 +130,8 @@ services:
       sqlserver:
         condition: service_started
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   cart-api:
