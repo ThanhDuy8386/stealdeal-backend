@@ -487,6 +487,7 @@ export interface NearbyQueryRequest {
   query?: string;            // store or bag name/description keyword search
   storeName?: string;        // alias for store name search
   category?: string;         // category name or slug (e.g. "bakery", "meals")
+  maxPrice?: number;         // maximum bag sale price in VND
   sortBy?: string;           // "distance" (default), "rating", "name", or "price" (bags only)
   sortOrder?: string;        // "asc" or "desc" (defaults: rating desc, distance asc)
 }
@@ -560,6 +561,8 @@ export interface ReviewFilterRequest {
 export interface ChatRequest {
   sessionId?: string | null;
   message: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 ```
 
@@ -683,6 +686,7 @@ export interface ChatResponse {
   sessionId: string;
   reply: string;
   suggestedBags: SurpriseBagResponse[];
+  suggestedStores: StoreProfileResponse[];
 }
 ```
 
