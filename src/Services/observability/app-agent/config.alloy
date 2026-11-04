@@ -1,0 +1,37 @@
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "stealdeal_services" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "stealdeal-services"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "identity-api|notification-api|store-api|cart-api|order-api|payment-api|rabbitmq"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "stealdeal" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.stealdeal_services.output
+  labels     = {environment = "capstone", host = "application-ec2"}
+  forward_to = [loki.write.observability.receiver]
+}
+
+loki.write "observability" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}

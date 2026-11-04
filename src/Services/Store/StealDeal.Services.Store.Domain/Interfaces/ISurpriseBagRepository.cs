@@ -21,7 +21,8 @@ namespace StealDeal.Services.Store.Domain.Interfaces
             decimal maxLng,
             string? status = null,
             string? query = null,
-            string? category = null);
+            string? category = null,
+            decimal? maxPrice = null);
         Task<bool> TryReserveQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
         Task<bool> TryReleaseQuantityAsync(Guid surpriseBagId, Guid storeId, int quantity, CancellationToken cancellationToken = default);
     }

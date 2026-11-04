@@ -136,10 +136,12 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
             var payload = Encoding.UTF8.GetString(body);
 
             _logger.LogInformation(
-                "Received inventory release message with RoutingKey: {RoutingKey}, DeliveryTag: {DeliveryTag}",
+                "Received inventory release message with RoutingKey: {RoutingKey}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
                 args.RoutingKey,
+                args.BasicProperties.MessageId,
                 args.DeliveryTag);
 
+            Guid? orderId = null;
             try
             {
                 var @event = JsonSerializer.Deserialize<InventoryReleaseRequestedEvent>(payload, new JsonSerializerOptions
@@ -153,13 +155,15 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
                         "Message payload could not be deserialized into InventoryReleaseRequestedEvent.");
                 }
 
+                orderId = @event.OrderId;
                 using var scope = _scopeFactory.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<InventoryReleaseRequestedEvent>>();
                 var context = CreateEventContext(args);
 
                 await handler.HandleAsync(@event, context, args.CancellationToken);
 
-                _logger.LogInformation("Released inventory for order id: {OrderId}", @event.OrderId);
+                _logger.LogInformation("Released inventory for order id: {OrderId}, MessageId: {MessageId}",
+                    @event.OrderId, args.BasicProperties.MessageId);
 
                 if (_channel != null)
                 {
@@ -168,7 +172,9 @@ namespace StealDeal.Services.Store.Infrastructure.BackgroundServices
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process inventory release message with DeliveryTag: {DeliveryTag}", args.DeliveryTag);
+                _logger.LogError(ex,
+                    "Failed to process inventory release message with OrderId: {OrderId}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
+                    orderId, args.BasicProperties.MessageId, args.DeliveryTag);
 
                 if (_channel != null)
                 {

@@ -191,7 +191,8 @@ namespace StealDeal.Services.Store.Application.Services
                 maxLng,
                 request.Status,
                 request.GetSearchQuery(),
-                request.Category);
+                request.Category,
+                request.MaxPrice);
 
             var items = candidates
                 .Select(b => new

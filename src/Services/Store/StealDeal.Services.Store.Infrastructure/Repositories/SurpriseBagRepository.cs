@@ -54,7 +54,8 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
             decimal maxLng,
             string? status = null,
             string? query = null,
-            string? category = null)
+            string? category = null,
+            decimal? maxPrice = null)
         {
             var dbQuery = _context.SurpriseBags
                 .AsNoTracking()
@@ -69,6 +70,11 @@ namespace StealDeal.Services.Store.Infrastructure.Repositories
             if (!string.IsNullOrWhiteSpace(status))
             {
                 dbQuery = dbQuery.Where(b => b.Status == status);
+            }
+
+            if (maxPrice.HasValue)
+            {
+                dbQuery = dbQuery.Where(b => b.SalePrice <= maxPrice.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(query))

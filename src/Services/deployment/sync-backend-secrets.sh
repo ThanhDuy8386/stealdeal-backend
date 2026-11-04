@@ -15,6 +15,7 @@ readonly REQUIRED_KEYS=(
   AWS_SECRET_KEY
   BREVO_API_KEY
   GEOAPIFY_API_KEY
+  GEMINI_API_KEY
   VNPAY_TMN_CODE
   VNPAY_HASH_SECRET
   MSSQL_SA_PASSWORD
@@ -134,7 +135,7 @@ fi
   done <"$temporary_rows_file"
 } >"$temporary_env_file"
 
-actual_key_count="$(grep -Ec '^(JWT_SECRET|AWS_ACCESS_KEY|AWS_SECRET_KEY|BREVO_API_KEY|GEOAPIFY_API_KEY|VNPAY_TMN_CODE|VNPAY_HASH_SECRET|MSSQL_SA_PASSWORD)=' "$temporary_env_file")"
+actual_key_count="$(grep -Ec '^(JWT_SECRET|AWS_ACCESS_KEY|AWS_SECRET_KEY|BREVO_API_KEY|GEOAPIFY_API_KEY|GEMINI_API_KEY|VNPAY_TMN_CODE|VNPAY_HASH_SECRET|MSSQL_SA_PASSWORD)=' "$temporary_env_file")"
 if [[ "$actual_key_count" -ne "${#REQUIRED_KEYS[@]}" ]]; then
   fail "generated environment file does not contain all required keys"
 fi

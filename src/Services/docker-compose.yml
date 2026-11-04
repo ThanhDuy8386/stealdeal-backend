@@ -1,5 +1,11 @@
 ﻿name: stealdeal-services
 
+x-api-logging: &api-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -55,6 +61,7 @@ services:
     build: ./Identity
     image: ${IDENTITY_IMAGE:-stealdeal-identity:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5158:5158"
     environment:
@@ -78,6 +85,7 @@ services:
     build: ./Notification
     image: ${NOTIFICATION_IMAGE:-stealdeal-notification:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5053:5053"
     environment:
@@ -100,6 +108,7 @@ services:
     build: ./Store
     image: ${STORE_IMAGE:-stealdeal-store:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5169:5169"
     environment:
@@ -109,6 +118,8 @@ services:
       Aws__AccessKeyId: ${AWS_ACCESS_KEY:?AWS_ACCESS_KEY is required}
       Aws__SecretAccessKey: ${AWS_SECRET_KEY:?AWS_SECRET_KEY is required}
       Geoapify__ApiKey: ${GEOAPIFY_API_KEY:?GEOAPIFY_API_KEY is required}
+      Gemini__ApiKey: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      Redis__ConnectionString: redis:6379
       RabbitMq__HostName: rabbitmq
       RabbitMq__Port: 5672
       RabbitMq__UserName: guest
@@ -120,11 +131,14 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
   cart-api:
     build: ./Cart
     image: ${CART_IMAGE:-stealdeal-cart:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5185:5185"
     environment:
@@ -143,6 +157,7 @@ services:
     build: ./Order
     image: ${ORDER_IMAGE:-stealdeal-order:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5165:5165"
     environment:
@@ -170,6 +185,7 @@ services:
     build: ./Payment
     image: ${PAYMENT_IMAGE:-stealdeal-payment:local}
     restart: unless-stopped
+    logging: *api-logging
     ports:
       - "5155:5155"
     environment:

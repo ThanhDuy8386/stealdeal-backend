@@ -17,6 +17,7 @@ namespace StealDeal.Services.Store.Application.DTOs.Requests
         public string? Query { get; set; }
         public string? StoreName { get; set; }
         public string? Category { get; set; }
+        public decimal? MaxPrice { get; set; }
 
         // Sorting options
         public string? SortBy { get; set; }

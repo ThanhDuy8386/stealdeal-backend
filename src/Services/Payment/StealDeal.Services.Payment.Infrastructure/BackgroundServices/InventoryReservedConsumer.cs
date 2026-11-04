@@ -140,10 +140,12 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
             var payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
             _logger.LogInformation(
-                "Received inventory reserved message with RoutingKey: {RoutingKey}, DeliveryTag: {DeliveryTag}",
+                "Received inventory reserved message with RoutingKey: {RoutingKey}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
                 args.RoutingKey,
+                args.BasicProperties.MessageId,
                 args.DeliveryTag);
 
+            Guid? orderId = null;
             try
             {
                 var @event = JsonSerializer.Deserialize<InventoryReservedEvent>(payload, JsonOptions);
@@ -153,6 +155,7 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
                     throw new InvalidOperationException("Message payload could not be deserialized into InventoryReservedEvent.");
                 }
 
+                orderId = @event.OrderId;
                 using var scope = _scopeFactory.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<InventoryReservedEvent>>();
                 var context = CreateEventContext(args);
@@ -160,8 +163,9 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
                 await handler.HandleAsync(@event, context, args.CancellationToken);
 
                 _logger.LogInformation(
-                    "Processed inventory reserved event for OrderId: {OrderId}.",
-                    @event.OrderId);
+                    "Processed inventory reserved event for OrderId: {OrderId}, MessageId: {MessageId}.",
+                    @event.OrderId,
+                    args.BasicProperties.MessageId);
 
                 if (_channel != null)
                 {
@@ -172,7 +176,9 @@ namespace StealDeal.Services.Payment.Infrastructure.BackgroundServices
             {
                 _logger.LogError(
                     ex,
-                    "Failed to process inventory reserved message with DeliveryTag: {DeliveryTag}",
+                    "Failed to process inventory reserved message with OrderId: {OrderId}, MessageId: {MessageId}, DeliveryTag: {DeliveryTag}",
+                    orderId,
+                    args.BasicProperties.MessageId,
                     args.DeliveryTag);
 
                 if (_channel != null)
