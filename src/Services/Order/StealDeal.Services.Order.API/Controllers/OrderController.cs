@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.Services.Interfaces;
+using StealDeal.Services.Order.Application.Constants;
 
 namespace StealDeal.Services.Order.API.Controllers
 {
@@ -70,7 +71,7 @@ namespace StealDeal.Services.Order.API.Controllers
         }
 
         [HttpGet("store/{storeId:guid}")]
-        [Authorize(Roles = "Seller,Admin")]
+        [Authorize(Roles = OrderRoles.SellerOrAdministrator)]
         public async Task<IActionResult> GetStoreOrders(Guid storeId)
         {
             var userId = GetCurrentUserId();

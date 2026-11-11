@@ -4,6 +4,7 @@ using System.Linq;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Domain.Models;
+using StealDeal.Services.Order.Domain.Constants;
 
 namespace StealDeal.Services.Order.Application.Mappings
 {
@@ -26,11 +27,12 @@ namespace StealDeal.Services.Order.Application.Mappings
             var subtotalSum = items.Sum(i => i.Subtotal);
             var totalAmount = subtotalSum + request.DeliveryFee - request.VoucherDiscount;
 
-            // Generate a simple pickup code if it is a Pickup delivery type
+            // Combine the order ID prefix with a fresh GUID prefix for pickup orders.
             string? pickupCode = null;
             if (request.DeliveryType.Equals("Pickup", StringComparison.OrdinalIgnoreCase))
             {
-                pickupCode = Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+                pickupCode = (orderId.ToString("N").Substring(0, 5)
+                    + Guid.NewGuid().ToString("N").Substring(0, 5)).ToUpperInvariant();
             }
 
             return new OrderProfile
@@ -47,7 +49,7 @@ namespace StealDeal.Services.Order.Application.Mappings
                 DeliveryType = request.DeliveryType.Trim(),
                 DeliveryAddress = request.DeliveryAddress.Trim(),
                 PickupCode = pickupCode,
-                Status = "Pending", // Default initial status
+                Status = OrderStatuses.Pending,
                 PickupDeadline = request.DeliveryType.Equals("Pickup", StringComparison.OrdinalIgnoreCase) 
                     ? DateTime.UtcNow.AddDays(1) // Example default: 24h deadline to pickup
                     : null,

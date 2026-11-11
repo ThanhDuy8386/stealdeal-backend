@@ -5,6 +5,7 @@ using StealDeal.Services.Identity.Application.Mappings;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 using StealDeal.Services.Identity.Domain.Interfaces.Repositories;
 using StealDeal.Services.Identity.Domain.Models;
+using StealDeal.Services.Identity.Domain.Constants;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -70,7 +71,7 @@ namespace StealDeal.Services.Identity.Application.Services
             user.UserTrustScore = new UserTrustScore
             {
                 UserId = user.Id,
-                Score = 100,
+                Score = TrustScoreLimits.InitialScore,
                 TotalOrders = 0,
                 SuccessfulPickups = 0,
                 NoShowCount = 0,

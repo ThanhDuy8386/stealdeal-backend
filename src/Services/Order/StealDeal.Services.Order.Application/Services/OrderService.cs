@@ -11,6 +11,8 @@ using StealDeal.Services.Order.Application.Mappings;
 using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Domain.Interfaces;
 using StealDeal.Services.Order.Domain.Models;
+using StealDeal.Services.Order.Domain.Constants;
+using StealDeal.Services.Order.Application.Constants;
 
 namespace StealDeal.Services.Order.Application.Services
 {
@@ -60,7 +62,7 @@ namespace StealDeal.Services.Order.Application.Services
             {
                 ExchangeName = "stealdeal.events",
                 ExchangeType = "topic",
-                RoutingKey = "order.created",
+                RoutingKey = OrderEventTypes.OrderCreated,
                 EventType = "OrderCreatedEvent",
                 Payload = payload,
                 Status = "Pending"
@@ -78,11 +80,11 @@ namespace StealDeal.Services.Order.Application.Services
                 throw new NotFoundException("Order not found.");
 
             // Verification check
-            bool isAdmin = roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
+            bool isAdmin = OrderRoles.IsAdministrator(roles);
             bool isBuyer = order.UserId == userId;
             // In a real microservice, Seller ownership of order.StoreId should be verified.
             // For now, we allow access if the user is the Admin, the Buyer, or any Seller.
-            bool isSeller = roles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
+            bool isSeller = roles.Contains(OrderRoles.Seller, StringComparer.OrdinalIgnoreCase);
 
             if (!isAdmin && !isBuyer && !isSeller)
                 throw new ForbiddenException("You do not have permission to view this order.");
@@ -109,9 +111,9 @@ namespace StealDeal.Services.Order.Application.Services
             if (order == null)
                 throw new NotFoundException("Order not found.");
 
-            bool isAdmin = roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
+            bool isAdmin = OrderRoles.IsAdministrator(roles);
             bool isBuyer = order.UserId == userId;
-            bool isSeller = roles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
+            bool isSeller = roles.Contains(OrderRoles.Seller, StringComparer.OrdinalIgnoreCase);
 
             // Validate status transitions & permissions
             string currentStatus = order.Status;
@@ -120,13 +122,13 @@ namespace StealDeal.Services.Order.Application.Services
             if (currentStatus.Equals(newStatus, StringComparison.OrdinalIgnoreCase))
                 return order.ToResponse();
 
-            if (newStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+            if (newStatus.Equals(OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
             {
                 // Both buyer and seller can cancel, but only if it is still "Pending"
                 if (!isBuyer && !isSeller && !isAdmin)
                     throw new ForbiddenException("You do not have permission to cancel this order.");
 
-                if (!currentStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                if (!currentStatus.Equals(OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase))
                     throw new BadRequestException("Only pending orders can be cancelled.");
             }
             else

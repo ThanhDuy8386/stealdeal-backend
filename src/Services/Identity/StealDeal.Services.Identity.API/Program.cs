@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Microsoft.Extensions.Options;
+using StealDeal.Services.Identity.Application.Configuration;
 using StealDeal.Services.Identity.API.Middlewares;
 using StealDeal.Services.Identity.Application.Services;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
@@ -29,6 +31,10 @@ builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("R
 builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<StoreVerifiedConsumerSettings>(builder.Configuration.GetSection("StoreVerifiedConsumer"));
 builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("Aws"));
+builder.Services.AddSingleton<IValidateOptions<TrustScoreSettings>, TrustScoreSettingsValidator>();
+builder.Services.AddOptions<TrustScoreSettings>()
+    .Bind(builder.Configuration.GetSection(TrustScoreSettings.SectionName))
+    .ValidateOnStart();
 
 // Dependency Injection for Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();

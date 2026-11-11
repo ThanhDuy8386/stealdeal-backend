@@ -2,6 +2,7 @@ using StealDeal.Services.Order.Application.DTOs.Events;
 using StealDeal.Services.Order.Application.Messaging;
 using StealDeal.Services.Order.Domain.Interfaces;
 using StealDeal.Services.Order.Domain.Models;
+using StealDeal.Services.Order.Domain.Constants;
 
 namespace StealDeal.Services.Order.Application.EventHandlers
 {
@@ -10,11 +11,6 @@ namespace StealDeal.Services.Order.Application.EventHandlers
         IIntegrationEventHandler<PaymentFailedEvent>,
         IIntegrationEventHandler<PaymentCompletedEvent>
     {
-        private const string PendingStatus = "Pending";
-        private const string InventoryReservationFailedStatus = "InventoryReservationFailed";
-        private const string PaymentFailedStatus = "PaymentFailed";
-        private const string ConfirmedStatus = "Confirmed";
-
         private readonly IOrderRepository _orderRepository;
         private readonly IProcessedMessageRepository _processedMessageRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -37,7 +33,7 @@ namespace StealDeal.Services.Order.Application.EventHandlers
             return HandleStatusEventAsync(
                 @event.OrderId,
                 context,
-                InventoryReservationFailedStatus,
+                OrderStatuses.InventoryReservationFailed,
                 cancellationToken);
         }
 
@@ -49,7 +45,7 @@ namespace StealDeal.Services.Order.Application.EventHandlers
             return HandleStatusEventAsync(
                 @event.OrderId,
                 context,
-                PaymentFailedStatus,
+                OrderStatuses.PaymentFailed,
                 cancellationToken);
         }
 
@@ -61,7 +57,7 @@ namespace StealDeal.Services.Order.Application.EventHandlers
             return HandleStatusEventAsync(
                 @event.OrderId,
                 context,
-                ConfirmedStatus,
+                OrderStatuses.Confirmed,
                 cancellationToken);
         }
 
@@ -108,7 +104,7 @@ namespace StealDeal.Services.Order.Application.EventHandlers
                 return false;
             }
 
-            return currentStatus.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase);
+            return currentStatus.Equals(OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
