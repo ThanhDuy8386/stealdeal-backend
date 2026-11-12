@@ -42,9 +42,11 @@ namespace StealDeal.Services.Store.Infrastructure.Services
                 throw new BadRequestException("Gemini API key is not configured. Set 'Gemini:ApiKey' in user secrets or configuration.");
             }
 
-            var instruction = string.IsNullOrWhiteSpace(systemInstruction)
-                ? _settings.SystemInstruction
-                : $"{_settings.SystemInstruction}\n\nContext:\n{systemInstruction}";
+            var instruction = string.IsNullOrWhiteSpace(_settings.SystemInstruction)
+                ? (systemInstruction ?? string.Empty)
+                : string.IsNullOrWhiteSpace(systemInstruction)
+                    ? _settings.SystemInstruction
+                    : $"{_settings.SystemInstruction}\n\nContext:\n{systemInstruction}";
 
             var contents = new List<object>();
 
