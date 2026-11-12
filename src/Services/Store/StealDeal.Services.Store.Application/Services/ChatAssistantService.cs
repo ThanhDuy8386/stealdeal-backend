@@ -63,6 +63,7 @@ namespace StealDeal.Services.Store.Application.Services
                 $"Available platform categories: {categoryListStr}.\n" +
                 "Rules:\n" +
                 "- When searching for stores or bags, call the appropriate search tool.\n" +
+                "- Treat general meal or food requests (e.g. 'what should I eat today?') as deal discovery and call the appropriate search tool.\n" +
                 "- If a search tool returns 'location_required', politely ask the user to turn on GPS / enable location permissions or update their default address in their user profile before you can search.\n" +
                 "- If a search tool returns 'no_results_found', politely let the user know and suggest widening the distance or trying another category or food item.\n" +
                 "- Highlight prices, savings, distance, and pickup hours when presenting bags.";
