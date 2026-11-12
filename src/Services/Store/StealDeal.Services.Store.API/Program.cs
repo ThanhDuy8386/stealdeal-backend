@@ -117,7 +117,7 @@ builder.Services.AddRateLimiter(options =>
         await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
     };
 
-    options.AddPolicy("LocationPolicy", httpContext =>
+    static RateLimitPartition<string> FixedWindowPerUser(HttpContext httpContext, int permitLimit)
     {
         var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                            ?? httpContext.User.FindFirstValue("sub")
@@ -126,11 +126,14 @@ builder.Services.AddRateLimiter(options =>
 
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 30,
+            PermitLimit = permitLimit,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
         });
-    });
+    }
+
+    options.AddPolicy("LocationPolicy", httpContext => FixedWindowPerUser(httpContext, 30));
+    options.AddPolicy("ChatPolicy", httpContext => FixedWindowPerUser(httpContext, 60));
 });
 
 builder.Services.AddCors(options =>

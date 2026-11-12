@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using StealDeal.Services.Store.Application.DTOs.Requests;
 using StealDeal.Services.Store.Application.Services.Interfaces;
 using System;
@@ -22,6 +23,7 @@ namespace StealDeal.Services.Store.API.Controllers
         }
 
         [HttpPost]
+        [EnableRateLimiting("ChatPolicy")]
         public async Task<IActionResult> SendMessage([FromBody] ChatRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
