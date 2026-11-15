@@ -123,6 +123,54 @@ public class InventoryReservedEventHandlerTests
         Assert.Equal(1, unitOfWork.SaveCalls);
     }
 
+    [Fact]
+    public async Task SameOrderDifferentMessageIds_DoesNotCreateSecondPayment()
+    {
+        var orderId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var storeId = Guid.NewGuid();
+        var firstMessageId = Guid.NewGuid();
+        var secondMessageId = Guid.NewGuid();
+
+        var gateway = new GatewayFake();
+        var factory = new GatewayFactoryFake(gateway);
+        var transactions = new TransactionRepositoryFake();
+        var processed = new ProcessedMessageRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake(transactions, processed);
+        var handler = new InventoryReservedEventHandler(
+            transactions, processed, factory, unitOfWork);
+
+        InventoryReservedEvent MakeEvent(Guid messageId) => new()
+        {
+            MessageId = messageId,
+            OrderId = orderId,
+            UserId = userId,
+            StoreId = storeId,
+            TotalAmount = 138
+        };
+
+        IntegrationEventContext MakeContext(Guid messageId) => new()
+        {
+            MessageId = messageId,
+            ConsumerName = "payment-inventory-reserved-test",
+            EventType = "inventory.reserved",
+            RoutingKey = "inventory.reserved"
+        };
+
+        await handler.HandleAsync(
+            MakeEvent(firstMessageId), MakeContext(firstMessageId));
+        await handler.HandleAsync(
+            MakeEvent(secondMessageId), MakeContext(secondMessageId));
+
+        Assert.Equal(1, gateway.CreateCalls);
+        Assert.Equal(1, transactions.AddCalls);
+        Assert.Equal(TransactionStatuses.Pending, transactions.Added?.Status);
+        Assert.Equal(2, processed.AddCalls);
+        Assert.Equal(2, unitOfWork.SaveCalls);
+        Assert.Contains(processed.Messages, m => m.MessageId == firstMessageId);
+        Assert.Contains(processed.Messages, m => m.MessageId == secondMessageId);
+    }
+
     private sealed class GatewayFake : IPaymentGateway
     {
         public string Method => PaymentMethods.VnPay;
@@ -175,7 +223,8 @@ public class InventoryReservedEventHandlerTests
         }
 
         public Task<Transaction?> GetByOrderIdAsync(Guid orderId)
-            => Task.FromResult<Transaction?>(null);
+    => Task.FromResult<Transaction?>(
+        Added?.OrderId == orderId ? Added : null);
 
         public Task<Transaction?> GetByIdAsync(Guid id)
             => throw new NotSupportedException();
@@ -198,25 +247,23 @@ public class InventoryReservedEventHandlerTests
     private sealed class ProcessedMessageRepositoryFake
         : IProcessedMessageRepository
     {
-        public ProcessedMessage? Added { get; private set; }
-        public int AddCalls { get; private set; }
+        public List<ProcessedMessage> Messages { get; } = new();
+        public ProcessedMessage? Added => Messages.LastOrDefault();
+        public int AddCalls => Messages.Count;
+        public Task<ProcessedMessage?> GetAsync(
+            Guid messageId, string consumerName)
+            => Task.FromResult(Messages.FirstOrDefault(m =>
+                m.MessageId == messageId && m.ConsumerName == consumerName));   
 
         public Task<bool> ExistsAsync(Guid messageId, string consumerName)
-            => Task.FromResult(
-                Added is { } saved &&
-                saved.MessageId == messageId &&
-                saved.ConsumerName == consumerName);
+            => Task.FromResult(Messages.Any(m =>
+                m.MessageId == messageId && m.ConsumerName == consumerName));
 
         public Task AddAsync(ProcessedMessage message)
         {
-            AddCalls++;
-            Added = message;
+            Messages.Add(message);
             return Task.CompletedTask;
         }
-
-        public Task<ProcessedMessage?> GetAsync(
-            Guid messageId, string consumerName)
-            => throw new NotSupportedException();
     }
 
     private sealed class UnitOfWorkFake(

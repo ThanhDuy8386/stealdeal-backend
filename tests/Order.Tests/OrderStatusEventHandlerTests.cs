@@ -95,6 +95,50 @@ public class OrderStatusEventHandlerTests
         Assert.Equal(1, unitOfWork.SaveCalls);
     }
 
+    [Fact]
+    public async Task LatePaymentCompleted_DoesNotConfirmFailedOrder()
+    {
+        var orderId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var order = new OrderProfile
+        {
+            Id = orderId,
+            UserId = Guid.NewGuid(),
+            StoreId = Guid.NewGuid(),
+            Status = "PaymentFailed"
+        };
+
+        var orders = new OrderRepositoryFake(order);
+        var processed = new ProcessedMessageRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var handler = new OrderStatusEventHandler(
+            orders, processed, unitOfWork);
+
+        await handler.HandleAsync(
+            new PaymentCompletedEvent
+            {
+                MessageId = messageId,
+                OrderId = orderId,
+                PaymentId = Guid.NewGuid(),
+                Amount = 138,
+                PaymentMethod = "VNPAY"
+            },
+            new IntegrationEventContext
+            {
+                MessageId = messageId,
+                ConsumerName = "order-payment-status-test",
+                EventType = "payment.completed",
+                RoutingKey = "payment.completed"
+            });
+
+        Assert.Equal("PaymentFailed", order.Status);
+        Assert.Equal(0, orders.UpdateCalls);
+        Assert.Equal(messageId, processed.Added?.MessageId);
+        Assert.Equal("payment.completed", processed.Added?.EventType);
+        Assert.Equal(orderId, processed.Added?.AggregateId);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+    }
+
     private sealed class OrderRepositoryFake(OrderProfile order)
         : IOrderRepository
     {

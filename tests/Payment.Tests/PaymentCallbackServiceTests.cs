@@ -149,6 +149,193 @@ public class PaymentCallbackServiceTests
         Assert.Equal(2, item.Quantity);
     }
 
+    [Fact]
+    public async Task SuccessfulCallback_AfterPaymentExpired_CreatesPendingRefund()
+    {
+        var paidAt = DateTime.UtcNow;
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            OrderId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            StoreId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = PaymentMethods.VnPay,
+            GatewayRef = "test-ref",
+            Status = TransactionStatuses.Expired,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-5)
+        };
+
+        var gateway = new GatewayFake(new PaymentCallbackResult
+        {
+            IsValidSignature = true,
+            IsSuccess = true,
+            GatewayRef = "test-ref",
+            Amount = 138,
+            GatewayTransactionNo = "late-payment-123",
+            PaidAtUtc = paidAt
+        });
+        var factory = new GatewayFactoryFake(gateway);
+        var transactions = new TransactionRepositoryFake(transaction);
+        var refunds = new RefundRepositoryFake();
+        var outbox = new OutboxRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = new PaymentCallbackService(
+            factory, transactions, refunds, outbox, unitOfWork);
+
+        var result = await service.HandleVnPayIpnAsync(
+            new Dictionary<string, string>());
+
+        Assert.Equal("00", result.RspCode);
+        Assert.Equal(TransactionStatuses.RefundPending, transaction.Status);
+        Assert.Equal(paidAt, transaction.PaidAt);
+        Assert.Equal("late-payment-123", transaction.GatewayTransactionNo);
+        Assert.Equal(1, transactions.UpdateCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+        Assert.Empty(outbox.Added);
+
+        Assert.Equal(1, refunds.AddCalls);
+        var refund = Assert.IsType<Refund>(refunds.Added);
+        Assert.Equal(RefundStatuses.Pending, refund.Status);
+        Assert.Equal(transaction.Id, refund.TransactionId);
+        Assert.Equal(transaction.OrderId, refund.OrderId);
+        Assert.Equal(138m, refund.Amount);
+    }
+
+    [Fact]
+    public async Task InvalidSignature_DoesNotChangePayment()
+    {
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            OrderId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = PaymentMethods.VnPay,
+            GatewayRef = "test-ref",
+            Status = TransactionStatuses.Pending
+        };
+
+        // The callback claims success, but its signature is invalid.
+        var gateway = new GatewayFake(new PaymentCallbackResult
+        {
+            IsValidSignature = false,
+            IsSuccess = true,
+            GatewayRef = "test-ref",
+            Amount = 138
+        });
+        var factory = new GatewayFactoryFake(gateway);
+        var transactions = new TransactionRepositoryFake(transaction);
+        var refunds = new RefundRepositoryFake();
+        var outbox = new OutboxRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = new PaymentCallbackService(
+            factory, transactions, refunds, outbox, unitOfWork);
+
+        var result = await service.HandleVnPayIpnAsync(
+            new Dictionary<string, string>());
+
+        Assert.Equal("97", result.RspCode);
+        Assert.Equal(1, gateway.VerifyCalls);
+        Assert.Equal(0, transactions.LookupCalls);
+        Assert.Equal(TransactionStatuses.Pending, transaction.Status);
+        Assert.Equal(0, transactions.UpdateCalls);
+        Assert.Equal(0, refunds.AddCalls);
+        Assert.Empty(outbox.Added);
+        Assert.Equal(0, unitOfWork.SaveCalls);
+    }
+
+    [Fact]
+    public async Task MismatchedAmount_DoesNotChangePayment()
+    {
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            OrderId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = PaymentMethods.VnPay,
+            GatewayRef = "test-ref",
+            Status = TransactionStatuses.Pending
+        };
+
+        var gateway = new GatewayFake(new PaymentCallbackResult
+        {
+            IsValidSignature = true,
+            IsSuccess = true,
+            GatewayRef = "test-ref",
+            Amount = 139 // Does not match the stored amount of 138.
+        });
+        var factory = new GatewayFactoryFake(gateway);
+        var transactions = new TransactionRepositoryFake(transaction);
+        var refunds = new RefundRepositoryFake();
+        var outbox = new OutboxRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = new PaymentCallbackService(
+            factory, transactions, refunds, outbox, unitOfWork);
+
+        var result = await service.HandleVnPayIpnAsync(
+            new Dictionary<string, string>());
+
+        Assert.Equal("04", result.RspCode);
+        Assert.Equal(1, gateway.VerifyCalls);
+        Assert.Equal(1, transactions.LookupCalls);
+        Assert.Equal(TransactionStatuses.Pending, transaction.Status);
+        Assert.Null(transaction.PaidAt);
+        Assert.Equal(0, transactions.UpdateCalls);
+        Assert.Equal(0, refunds.AddCalls);
+        Assert.Empty(outbox.Added);
+        Assert.Equal(0, unitOfWork.SaveCalls);
+    }
+
+    [Fact]
+    public async Task RepeatedSuccessfulCallback_DoesNotQueueSecondCompletion()
+    {
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            OrderId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = PaymentMethods.VnPay,
+            GatewayRef = "test-ref",
+            Status = TransactionStatuses.Pending
+        };
+
+        var gateway = new GatewayFake(new PaymentCallbackResult
+        {
+            IsValidSignature = true,
+            IsSuccess = true,
+            GatewayRef = "test-ref",
+            Amount = 138,
+            GatewayTransactionNo = "payment-123",
+            PaidAtUtc = DateTime.UtcNow
+        });
+        var factory = new GatewayFactoryFake(gateway);
+        var transactions = new TransactionRepositoryFake(transaction);
+        var refunds = new RefundRepositoryFake();
+        var outbox = new OutboxRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = new PaymentCallbackService(
+            factory, transactions, refunds, outbox, unitOfWork);
+        var parameters = new Dictionary<string, string>();
+
+        var firstResult = await service.HandleVnPayIpnAsync(parameters);
+        var secondResult = await service.HandleVnPayIpnAsync(parameters);
+
+        Assert.Equal("00", firstResult.RspCode);
+        Assert.Equal("02", secondResult.RspCode);
+        Assert.Equal(TransactionStatuses.Success, transaction.Status);
+        Assert.Equal(2, gateway.VerifyCalls);
+        Assert.Equal(2, transactions.LookupCalls);
+        Assert.Equal(1, transactions.UpdateCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+        Assert.Equal(0, refunds.AddCalls);
+
+        var message = Assert.Single(outbox.Added);
+        Assert.Equal(PaymentEventTypes.PaymentCompleted, message.EventType);
+    }
+
     private sealed class GatewayFake(PaymentCallbackResult callback)
         : IPaymentGateway
     {
@@ -185,10 +372,14 @@ public class PaymentCallbackServiceTests
         : ITransactionRepository
     {
         public int UpdateCalls { get; private set; }
+        public int LookupCalls { get; private set; }
 
         public Task<Transaction?> GetByGatewayRefAsync(string gatewayRef)
-            => Task.FromResult<Transaction?>(
+        {
+            LookupCalls++;
+            return Task.FromResult<Transaction?>(
                 gatewayRef == transaction.GatewayRef ? transaction : null);
+        }
 
         public void Update(Transaction updated)
         {
@@ -228,11 +419,13 @@ public class PaymentCallbackServiceTests
 
     private sealed class RefundRepositoryFake : IRefundRepository
     {
+        public Refund? Added { get; private set; }
         public int AddCalls { get; private set; }
 
         public Task AddAsync(Refund refund)
         {
             AddCalls++;
+            Added = refund;
             return Task.CompletedTask;
         }
 
