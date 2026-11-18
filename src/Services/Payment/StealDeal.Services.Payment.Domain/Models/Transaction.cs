@@ -28,6 +28,7 @@ namespace StealDeal.Services.Payment.Domain.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation properties
         public ICollection<Refund> Refunds { get; set; } = new List<Refund>();
