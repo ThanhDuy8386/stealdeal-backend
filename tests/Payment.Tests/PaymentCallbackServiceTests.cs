@@ -336,6 +336,53 @@ public class PaymentCallbackServiceTests
         Assert.Equal(PaymentEventTypes.PaymentCompleted, message.EventType);
     }
 
+    [Fact]
+    public async Task RepeatedLateSuccessfulCallback_DoesNotCreateSecondRefund()
+    {
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            OrderId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            StoreId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = PaymentMethods.VnPay,
+            GatewayRef = "test-ref",
+            Status = TransactionStatuses.Expired
+        };
+
+        var gateway = new GatewayFake(new PaymentCallbackResult
+        {
+            IsValidSignature = true,
+            IsSuccess = true,
+            GatewayRef = "test-ref",
+            Amount = 138,
+            GatewayTransactionNo = "late-payment-123",
+            PaidAtUtc = DateTime.UtcNow
+        });
+        var transactions = new TransactionRepositoryFake(transaction);
+        var refunds = new RefundRepositoryFake();
+        var outbox = new OutboxRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = new PaymentCallbackService(
+            new GatewayFactoryFake(gateway),
+            transactions, refunds, outbox, unitOfWork);
+
+        var parameters = new Dictionary<string, string>();
+
+        var firstResult = await service.HandleVnPayIpnAsync(parameters);
+        var secondResult = await service.HandleVnPayIpnAsync(parameters);
+
+        Assert.Equal("00", firstResult.RspCode);
+        Assert.Equal("00", secondResult.RspCode);
+        Assert.Equal(TransactionStatuses.RefundPending, transaction.Status);
+        Assert.Equal(2, gateway.VerifyCalls);
+        Assert.Equal(1, refunds.AddCalls);
+        Assert.Equal(1, transactions.UpdateCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+        Assert.Empty(outbox.Added);
+    }
+
     private sealed class GatewayFake(PaymentCallbackResult callback)
         : IPaymentGateway
     {

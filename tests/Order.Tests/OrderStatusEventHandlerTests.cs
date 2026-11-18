@@ -139,6 +139,94 @@ public class OrderStatusEventHandlerTests
         Assert.Equal(1, unitOfWork.SaveCalls);
     }
 
+    [Fact]
+    public async Task DuplicatePaymentCompletedEvent_ConfirmsOrderOnlyOnce()
+    {
+        var orderId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var order = new OrderProfile
+        {
+            Id = orderId,
+            UserId = Guid.NewGuid(),
+            StoreId = Guid.NewGuid(),
+            Status = "Pending"
+        };
+
+        var orders = new OrderRepositoryFake(order);
+        var processed = new ProcessedMessageRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var handler = new OrderStatusEventHandler(
+            orders, processed, unitOfWork);
+
+        var paymentCompleted = new PaymentCompletedEvent
+        {
+            MessageId = messageId,
+            OrderId = orderId,
+            PaymentId = Guid.NewGuid(),
+            Amount = 138,
+            PaymentMethod = "VNPAY"
+        };
+        var context = new IntegrationEventContext
+        {
+            MessageId = messageId,
+            ConsumerName = "order-payment-status-test",
+            EventType = "payment.completed",
+            RoutingKey = "payment.completed"
+        };
+
+        await handler.HandleAsync(paymentCompleted, context);
+        await handler.HandleAsync(paymentCompleted, context);
+
+        Assert.Equal("Confirmed", order.Status);
+        Assert.Equal(1, orders.UpdateCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+        Assert.Equal(messageId, processed.Added?.MessageId);
+    }
+
+    [Fact]
+    public async Task LatePaymentFailed_DoesNotDowngradeConfirmedOrder()
+    {
+        var orderId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var order = new OrderProfile
+        {
+            Id = orderId,
+            UserId = Guid.NewGuid(),
+            StoreId = Guid.NewGuid(),
+            Status = "Confirmed"
+        };
+
+        var orders = new OrderRepositoryFake(order);
+        var processed = new ProcessedMessageRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var handler = new OrderStatusEventHandler(
+            orders, processed, unitOfWork);
+
+        await handler.HandleAsync(
+            new PaymentFailedEvent
+            {
+                MessageId = messageId,
+                OrderId = orderId,
+                PaymentId = Guid.NewGuid(),
+                ReasonCode = "PaymentFailed",
+                Reason = "Payment failure arrived late"
+            },
+            new IntegrationEventContext
+            {
+                MessageId = messageId,
+                ConsumerName = "order-payment-status-test",
+                EventType = "payment.failed",
+                RoutingKey = "payment.failed"
+            });
+
+        Assert.Equal("Confirmed", order.Status);
+        Assert.Equal(0, orders.UpdateCalls);
+        Assert.Equal(messageId, processed.Added?.MessageId);
+        Assert.Equal("payment.failed", processed.Added?.EventType);
+        Assert.Equal(orderId, processed.Added?.AggregateId);
+        Assert.Equal(1, unitOfWork.SaveCalls);
+    }
+
     private sealed class OrderRepositoryFake(OrderProfile order)
         : IOrderRepository
     {
@@ -169,7 +257,10 @@ public class OrderStatusEventHandlerTests
         public ProcessedMessage? Added { get; private set; }
 
         public Task<bool> ExistsAsync(Guid messageId, string consumerName)
-            => Task.FromResult(false);
+            => Task.FromResult(
+                Added is { } saved &&
+                saved.MessageId == messageId &&
+                saved.ConsumerName == consumerName);
 
         public Task AddAsync(ProcessedMessage message)
         {
