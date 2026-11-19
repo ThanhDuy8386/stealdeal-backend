@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using StealDeal.Services.Payment.Application.Exceptions;
 
 namespace StealDeal.Services.Payment.Infrastructure.Repositories
 {
@@ -16,7 +18,15 @@ namespace StealDeal.Services.Payment.Infrastructure.Repositories
 
         public async Task<int> SaveChangesAsync()
         {
-            return await _context.SaveChangesAsync();
+            try
+            {
+                return await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _context.ChangeTracker.Clear();
+                throw new PaymentWriteConflictException(ex);
+            }
         }
     }
 }
