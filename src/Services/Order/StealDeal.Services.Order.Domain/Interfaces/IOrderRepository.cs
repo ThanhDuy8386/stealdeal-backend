@@ -12,5 +12,6 @@ namespace StealDeal.Services.Order.Domain.Interfaces
         Task<IEnumerable<OrderProfile>> GetByUserIdAsync(Guid userId);
         Task<IEnumerable<OrderProfile>> GetByStoreIdAsync(Guid storeId);
         void Update(OrderProfile order);
+        Task<bool> TryCancelPendingAsync(Guid orderId, DateTime updatedAtUtc, CancellationToken cancellationToken = default);
     }
 }

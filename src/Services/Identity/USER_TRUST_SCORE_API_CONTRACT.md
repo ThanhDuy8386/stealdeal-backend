@@ -1,8 +1,8 @@
 # User Trust Score — Contract MVP
 
-Chốt ngày 2026-11-11; cập nhật bước 4 ngày 2026-11-25, theo `USER_TRUST_SCORE_IMPLEMENTATION_PLAN.md`.
+Chốt ngày 2026-11-11; cập nhật bước 5 ngày 2026-11-25, theo `USER_TRUST_SCORE_IMPLEMENTATION_PLAN.md`.
 
-Trạng thái: bước 1–4 đã implement. Bước 1 bổ sung constants, settings có startup validation và DTO. Bước 2 có service/repository xử lý điểm và tính policy nội bộ. Bước 3 đã nối Payment event và Identity consumer; mặc định chỉ khai báo queue, chưa bật xử lý. Bước 4 đã mở purchase eligibility và kiểm chứng profile. Endpoint NoShow và enforcement tạo đơn tại Order chưa implement.
+Trạng thái: bước 1–5 đã implement. Bước 1 bổ sung constants, settings có startup validation và DTO. Bước 2 có service/repository xử lý điểm và tính policy nội bộ. Bước 3 đã nối Payment event và Identity consumer; mặc định chỉ khai báo queue, chưa bật xử lý. Bước 4 đã mở purchase eligibility và kiểm chứng profile. Bước 5 đã siết ownership/status và dùng deadline pickup từ Store. Endpoint NoShow và enforcement trust score khi tạo đơn tại Order chưa implement.
 
 ## Phạm vi
 
@@ -97,6 +97,15 @@ Order tự kiểm tra eligibility khi tạo order. FE không bắt buộc gọi 
 
 Service bước 2 đọc eligibility mà không mở transaction ghi hoặc tạo/sửa trust row. Nếu user tồn tại nhưng thiếu trust row, trả policy mặc định ở mức 100; consumer khởi tạo row khi ghi nhận event. Không tạo ledger thưởng/phạt hoặc gia hạn khóa khi đọc. API đã mở ở bước 4; OpenAPI khai báo schema `PurchaseEligibilityResponse` cho response 200. Bước 7 sẽ thêm client/enforcement tại Order.
 
+## Order ownership, deadline và eligibility NoShow: đã implement ở bước 5
+
+- `GET /api/order/orders/{id}`: buyer của đơn, seller sở hữu store hoặc Admin/SuperAdmin. `GET /api/order/orders/store/{storeId}`: owner có role Seller hoặc Admin/SuperAdmin. Backend xác minh OwnerId qua API Store hiện có; role Seller một mình không đủ quyền. Ownership sai trả `403` với `reasonCode=StoreOwnershipRequired`.
+- Store lookup lỗi mạng/timeout/HTTP/JSON trả `503` với `reasonCode=DependencyUnavailable`; không trả lỗi tín nhiệm cho lỗi kỹ thuật. Buyer/Admin xem chi tiết đơn không phụ thuộc vào Store lookup. Không thêm quyền xem điểm buyer cho seller.
+- OrderResponse giữ các field cũ, bổ sung `canMarkNoShow: boolean` và `noShowIneligibleReason: string | null`. Policy nghiệp vụ: Pickup + Confirmed + deadline đã verified + nowUtc > deadline. Các field này không cấp quyền thao tác cho caller và không khẳng định user chưa nhận hàng; command bước 6 sẽ kiểm tra quyền và policy lần nữa.
+- Cả `POST /api/order/orders` và `POST /api/order/orders/checkout-from-cart` đều qua validation Store chung ở OrderService: kiểm tra store/bag/quantity/stock/expiry, dùng tên và giá từ Store. Client/cart không quyết định deadline. Với nhiều bag Pickup, cần giao khung giờ có độ dài dương; deadline là min(PickupEndTime), với max(PickupStartTime) < min(PickupEndTime). Không có giao nhau trả `400`, không ghi order/Outbox; checkout không xóa cart khi validation lỗi.
+- Deadline trả UTC, giữ snapshot lúc tạo đơn; thay lịch bag sau mua không sửa deadline của order. OrderProfile có cờ nội bộ PickupDeadlineVerified, không nhận từ request. Migration `20261125041036_AddVerifiedPickupDeadline` giữ đơn cũ ở false, nên các đơn cũ chưa xác minh có canMarkNoShow=false. Không tự backfill từ lịch bag hiện tại.
+- `PATCH /api/order/orders/{id}/status` hiện chỉ cho buyer/owner/admin hủy Pending, body `{ "status": "Cancelled" }`. Lặp Cancelled trả `200` sau authorization. Đơn đã đổi status hoặc cố đặt Confirmed/NoShow/Completed/status khác trả `409`; status null/rỗng trả `400`. Hủy dùng atomic update trên điều kiện Pending. Command NoShow riêng sẽ được thêm ở bước 6.
+
 ## NoShow: endpoint mới ở bước 6
 
 `POST /api/order/orders/{id:guid}/no-show`.
@@ -109,7 +118,7 @@ Service bước 2 đọc eligibility mà không mở transaction ghi hoặc tạ
 - Response `200` sử dụng `OrderResponse` hiện có, với `status = NoShow`; không cần DTO response mới chỉ để bọc lại order.
 - Không trả điểm buyer cho seller hoặc khẳng định Identity đã trừ điểm. Status + Outbox được commit trước response; Identity xử lý bất đồng bộ.
 - Gọi lại trên NoShow trả kết quả idempotent sau kiểm tra quyền, không tạo thêm event.
-- Các endpoint danh sách/chi tiết order giữ contract hiện có; eligibility NoShow trong DTO được bổ sung ở bước 5. Generic PATCH status được siết ở bước 6.
+- Các endpoint danh sách/chi tiết order giữ contract hiện có; eligibility NoShow và generic PATCH status đã được siết trong bước 5. Command dùng lại OrderNoShowPolicy và vẫn phải authorize/check trạng thái tại thời điểm xử lý.
 
 ## Error convention cho các bước triển khai endpoint
 
@@ -147,5 +156,6 @@ Không thêm policy fields hoặc lộ điểm buyer trong lỗi seller đánh d
 - Chưa bật consumer mới hay backfill trong bước 1, nên chưa có thay đổi điểm/quyền mua cho user đang tồn tại.
 - Bước 2 đăng ký service/repository nội bộ, chưa có consumer hay controller gọi tự động. Migration `20261111102442_AddTrustScoreIntegrity` cần được áp dụng trước khi bật consumer; unique index và check constraints từ chối dữ liệu cũ trùng/điểm ngoài 0–100. Không có SQL preflight riêng hoặc index tối ưu cooldown trong bản MVP. Chưa áp dụng migration lên database ứng dụng trong quá trình implement.
 - Bước 3 đã có consumer nhưng `TrustScoreConsumer:Enabled=false` mặc định; vẫn khai báo queue để tránh mất event do chưa có binding riêng cho Identity. Payload cũ thiếu UserId được giữ trong DLQ, phải đối chiếu Transaction rồi enrich/replay theo runbook bước 3, không bỏ qua hoặc tự backfill tất cả lịch sử. Trước khi bật NoShow ở bước 6, xử lý order Confirmed chưa có ledger thanh toán theo cutover/backfill trong plan bước 8.
+- Bước 5 thêm migration Order một cột PickupDeadlineVerified default false; cần Update-Database cho Order trước khi chạy bản mới. Chưa apply lên DB ứng dụng. Đơn cũ phải xác minh cả deadline lịch sử và payment ledger nếu muốn mở NoShow; không cung cấp API sửa cờ hoặc tự suy luận theo lịch bag hiện tại.
 - Backfill nếu cần là tác vụ riêng có kiểm soát/idempotency, không reset trust row hoặc chạy lại toàn bộ điểm một cách âm thầm.
 - Chưa có flow miễn/hoàn phạt hoặc đảo NoShow trong MVP. Không yêu cầu UI quản trị để hoàn thành backend/FE của phạm vi này.

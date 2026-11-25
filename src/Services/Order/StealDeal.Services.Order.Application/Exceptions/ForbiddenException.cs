@@ -2,6 +2,11 @@ namespace StealDeal.Services.Order.Application.Exceptions
 {
     public class ForbiddenException : Exception
     {
-        public ForbiddenException(string message) : base(message) { }
+        public string? ReasonCode { get; }
+
+        public ForbiddenException(string message, string? reasonCode = null) : base(message)
+        {
+            ReasonCode = reasonCode;
+        }
     }
 }

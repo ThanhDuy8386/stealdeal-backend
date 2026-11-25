@@ -1,6 +1,6 @@
 # User Trust Score — Kế hoạch triển khai backend
 
-Ngày tạo: 2026-11-10. Cập nhật: 2026-11-25. Trạng thái: đã implement bước 1–4; các bước 5–8 chưa implement. Consumer bước 3 mặc định chỉ khai báo queue, chưa bật xử lý message.
+Ngày tạo: 2026-11-10. Cập nhật: 2026-11-25. Trạng thái: đã implement bước 1–5; các bước 6–8 chưa hoàn tất. Consumer bước 3 mặc định chỉ khai báo queue, chưa bật xử lý message.
 
 Phạm vi cập nhật: MVP chỉ hiển thị điểm trong user profile, thông báo hạn chế khi checkout và cho seller đánh dấu NoShow. Không làm giao diện/API quản lý trust score cho admin hoặc seller, không làm trang lịch sử điểm.
 
@@ -46,14 +46,14 @@ Không dùng `User.IsActive = false` để thực hiện chính sách này: user
 
 | Khu vực | Hiện trạng | Việc cần làm |
 | --- | --- | --- |
-| Payment `PaymentCallbackService.MarkPaymentSuccessAsync` | Đổi transaction sang `Success` và ghi `payment.completed` vào Outbox | Bổ sung `UserId` trong payload |
+| Payment `PaymentCallbackService.MarkPaymentSuccessAsync` | Đổi transaction sang `Success`, ghi `payment.completed` có UserId vào Outbox | Đã nối ở bước 3 |
 | Payment `MarkLateSuccessForRefundAsync` | Chuyển sang `RefundPending`, không phát `payment.completed` | Giữ nguyên, không thưởng điểm |
 | Order `OrderStatusEventHandler` | Nhận `payment.completed` và chuyển `Pending -> Confirmed` | Giữ hành vi, tiếp nhận payload mở rộng tương thích |
-| Identity | Có hai model trust score, profile đã trả điểm, `ProcessedMessages`, consumer mẫu `StoreVerifiedConsumer` | Thêm service/repository/consumer và API đánh giá quyền mua; dùng lại profile để hiển thị điểm |
-| Order `UpdateOrderStatusAsync` | Seller có thể cập nhật status khá rộng, chưa kiểm tra sở hữu cửa hàng | Siết quyền và transition; không cho bypass NoShow |
-| Order `GetStoreOrdersAsync` và `GetOrderByIdAsync` | Chưa kiểm tra sở hữu cửa hàng cho seller | Bổ sung kiểm tra ở backend |
-| Order `OrderMapping` | `PickupDeadline` mặc định tạo đơn +24 giờ | Thay bằng thời hạn pickup thực tế do backend lấy từ Store |
-| Store `GET /api/store/stores/{id}` | Response có `OwnerId` | Order có thể dùng để xác minh seller, chưa cần endpoint Store mới |
+| Identity | Đã có service/repository/consumer và API purchase eligibility; profile dùng lại mapping hiện có | Bật consumer theo cutover; bước 7 nối enforcement tại Order |
+| Order `UpdateOrderStatusAsync` | Đã kiểm tra owner; generic PATCH chỉ cho Pending -> Cancelled bằng atomic update | Bước 6 thêm command NoShow riêng, không cho bypass bằng generic PATCH |
+| Order `GetStoreOrdersAsync` và `GetOrderByIdAsync` | Đã kiểm tra ownership của seller, giữ quyền buyer và Admin/SuperAdmin | Hoàn tất ở bước 5 |
+| Order `OrderMapping` | Deadline mới từ giao khung giờ bag; có cờ verified, không dùng mặc định +24 giờ | Apply migration Order trước khi chạy bản mới; xử lý legacy theo mục bước 5 |
+| Store `GET /api/store/stores/{id}` | Response có `OwnerId`; Order đã dùng qua StoreCatalogHttpClient | Không cần endpoint Store mới |
 
 API `GET /api/identity/account/profile` hiện đã trả `UserDetailResponse.UserTrustScore`; repository cũng include trust row và mapping đã có `Score`. Dùng lại flow này để hiển thị điểm, không cần endpoint đọc điểm riêng. Phần Identity bổ sung là xử lý event, lưu lịch sử nội bộ và API đánh giá quyền mua.
 
@@ -353,19 +353,38 @@ Kiểm chứng bước 4 (2026-11-25): build Identity API thành công, còn war
 
 ### Bước 5 — Order ownership, deadline và danh sách kiểm kê
 
-- [ ] Thêm client xác minh OwnerId của store từ API Store hiện có.
-- [ ] Siết quyền xem đơn, xem danh sách cửa hàng và cập nhật status.
-- [ ] Deadline lấy từ dữ liệu bag đã được Store xác thực, không tin client truyền tự do.
-- [ ] Với nhiều bag, chỉ nhận đơn có khung giờ pickup giao nhau; deadline là thời điểm kết thúc của khung giao nhau. Không có giao nhau thì từ chối order thay vì tạo deadline sai.
-- [ ] Áp dụng cho cả direct create và checkout-from-cart; direct create không bỏ qua validation.
-- [ ] Xử lý đơn cũ có deadline +24 giờ: chưa cho mark NoShow nếu chưa xác minh/sửa deadline; không tự suy luận deadline lịch sử từ lịch bag hiện tại nếu bag đã bị chỉnh sửa.
-- [ ] Tái sử dụng danh sách/chi tiết order hiện có, bổ sung eligibility NoShow trong DTO; giữ response shape tương thích, không bắt buộc search/pagination mới.
+- [x] Thêm client xác minh OwnerId của store từ API Store hiện có.
+- [x] Siết quyền xem đơn, xem danh sách cửa hàng và cập nhật status.
+- [x] Deadline lấy từ dữ liệu bag đã được Store xác thực, không tin client truyền tự do.
+- [x] Với nhiều bag, chỉ nhận đơn có khung giờ pickup giao nhau; deadline là thời điểm kết thúc của khung giao nhau. Không có giao nhau thì từ chối order thay vì tạo deadline sai.
+- [x] Áp dụng cho cả direct create và checkout-from-cart; direct create không bỏ qua validation.
+- [x] Xử lý đơn cũ có deadline +24 giờ: chưa cho mark NoShow nếu chưa xác minh/sửa deadline; không tự suy luận deadline lịch sử từ lịch bag hiện tại nếu bag đã bị chỉnh sửa.
+- [x] Tái sử dụng danh sách/chi tiết order hiện có, bổ sung eligibility NoShow trong DTO; giữ response shape tương thích, không bắt buộc search/pagination mới.
+
+Chi tiết triển khai bước 5:
+
+- Mở rộng `IStoreCatalogClient`/`StoreCatalogHttpClient` đang có bằng `GetStoreAsync`; tái sử dụng typed HttpClient và section `StoreService`, không tạo client/framework riêng. DTO store chỉ nhận Id, OwnerId, Name, IsActive và IsVerify. Client kiểm tra ID/owner/body hợp lệ; not found trả null; HTTP lỗi, timeout, lỗi kết nối hoặc JSON sai trả `DependencyUnavailableException`. Timeout client Store là 10 giây. Caller cancellation được giữ nguyên.
+- OrderService kiểm tra role Seller + OwnerId từ Store trước khi xem chi tiết đơn người khác, liệt kê đơn cửa hàng hoặc cập nhật status. Buyer vẫn xem đơn của mình; Admin/SuperAdmin được hỗ trợ mọi store. Buyer/Admin không cần gọi Store để xem chi tiết, nên vẫn xem được đơn đã trả tiền khi Store không khả dụng. Kiểm tra quyền trước cả request lặp/idempotent để không lộ dữ liệu order.
+- Middleware Order giữ ProblemDetails hiện có, bổ sung `403 / StoreOwnershipRequired` và `503 / DependencyUnavailable`. Lỗi Store không được hiểu thành user bị phạt hoặc mặc định cho phép truy cập.
+- Validation catalog được đặt tại flow chung `OrderService.CreateOrderAsync`. Checkout service chỉ khóa/đọc cart rồi chuyển bagId/quantity vào flow này; bỏ phần đọc/validate bag trùng tại checkout. Cả direct create và checkout đều kiểm tra store active/verified, bag thuộc store, tổng quantity của bag lặp, tồn kho, trạng thái bag, khung giờ pickup và expiry. Tên store/bag và đơn giá lấy từ Store, ghi đè snapshot client/cart gửi. Reservation thực tế vẫn do atomic update ở Store xử lý sau order.created; catalog check không thay thế reservation.
+- Với Pickup: chuẩn hóa UTC như convention client Cart/Order hiện có (SQL datetime2 không có Kind được hiểu là UTC); tính start=max(PickupStartTime), end=min(PickupEndTime). Start >= end bị từ chối, kể cả hai khung chỉ chạm tại một thời điểm. Deadline là end, lưu snapshot trong order lúc tạo. Khi xem đơn không đọc lại lịch bag để sửa deadline. Non-Pickup không có deadline và không đủ điều kiện NoShow.
+- Thêm đúng một property **OrderProfile.PickupDeadlineVerified** và migration `20261125041036_AddVerifiedPickupDeadline`: một cột bit NOT NULL, default false. Hai model Identity không đổi. Order pickup mới được validate từ Store thì lưu deadline + verified=true; dữ liệu cũ giữ nguyên deadline và verified=false. Không tự đánh dấu đơn cũ bằng ngày cutover hoặc suy luận từ lịch bag hiện tại. Nếu cần mở NoShow cho đơn cũ, phải có bằng chứng lịch pickup tại thời điểm mua và payment ledger, rồi mới thực hiện tác vụ sửa/backfill riêng có kiểm soát; bước này không thêm endpoint sửa cờ/deadline.
+- `OrderNoShowPolicy` ở Domain trả lý do nếu không phải Pickup, chưa Confirmed, deadline thiếu/chưa verified, hoặc chưa qua deadline. Mapping dùng cùng policy thêm `canMarkNoShow` và `noShowIneligibleReason` vào OrderResponse của danh sách/chi tiết, giữ các field cũ. Đây là business eligibility, không thay thế kiểm tra quyền caller hoặc kết luận user thực sự vắng mặt. Command bước 6 sẽ dùng lại policy và kiểm tra lại trong thao tác update atomic.
+- Generic PATCH status đã được siết ngay trong bước 5: chỉ buyer/owner/admin được hủy Pending; lặp Cancelled trả idempotent sau kiểm tra quyền. Không cho tự đặt Confirmed, NoShow, Completed hoặc status tùy ý, cũng không cho thoát NoShow. Repository dùng atomic `UPDATE ... WHERE Status = Pending` để thao tác hủy không ghi đè status đã thay đổi; không thêm lock. Chưa thêm command/event NoShow ở bước này, review eligibility vẫn thuộc bước 6.
+
+Migration Order phải được apply trước khi chạy API mới; chưa apply lên DB ứng dụng trong quá trình implement:
+
+```powershell
+Update-Database -Project StealDeal.Services.Order.Infrastructure -StartupProject StealDeal.Services.Order.API
+```
+
+Kiểm chứng bước 5 (2026-11-25): Order API build thành công. Harness tạm chạy controller/middleware/JWT thật, SQL LocalDB riêng và Store/Cart giả đã qua **77 kiểm tra**: nâng migration từ schema trước bước 5 với đơn legacy, snapshot khớp model, phân quyền seller/buyer/admin, ProblemDetails 403/503, generic status, handler payment, policy NoShow tại deadline, snapshot không đổi theo bag sửa sau mua, overlap/quantity/stock/expiry, cả direct/cart, giữ cart và không ghi order/Outbox khi thất bại, atomic cancel và lỗi HTTP/JSON/timeout/cancellation của client. Không chạy RabbitMQ hoặc gọi Store/Cart/DB ứng dụng thật. DB test và source/output tạm được dọn sau kiểm tra; không thêm test project vào solution.
 
 ### Bước 6 — Command NoShow
 
 - [ ] Implement POST NoShow, lock order, lưu status + Outbox atomic.
 - [ ] Command chỉ nhận orderId và ghi chú tùy chọn; actor lấy từ JWT, mức trừ điểm do Identity quyết định.
-- [ ] Generic PATCH status không cho caller tự đặt Confirmed, NoShow hoặc thoát NoShow để phạt lại.
+- [x] Generic PATCH status không cho caller tự đặt Confirmed, NoShow hoặc thoát NoShow để phạt lại (đã siết trong bước 5).
 - [ ] Event payment đến muộn không được ghi đè NoShow về Confirmed.
 - [ ] Tích hợp event `order.no-show` với Identity consumer đã tạo ở bước 3.
 - [ ] Rà các API đang phụ thuộc Completed, đặc biệt review eligibility hiện cho Completed/Pending: chuyển sang quy tắc phù hợp Confirmed đã thanh toán, bỏ bypass Pending và không cho NoShow đủ điều kiện review. Ghi rõ quy tắc review này không xác nhận user đã nhận hàng.

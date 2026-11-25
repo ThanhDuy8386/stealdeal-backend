@@ -21,26 +21,24 @@ namespace StealDeal.Services.Order.Application.Services
         private readonly IOrderRepository _orderRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IOutboxMessageRepository _outboxMessageRepository;
+        private readonly IStoreCatalogClient _storeCatalogClient;
 
         public OrderService(
             IOrderRepository orderRepository,
             IUnitOfWork unitOfWork,
-            IOutboxMessageRepository outboxMessageRepository)
+            IOutboxMessageRepository outboxMessageRepository,
+            IStoreCatalogClient storeCatalogClient)
         {
             _orderRepository = orderRepository;
             _unitOfWork = unitOfWork;
             _outboxMessageRepository = outboxMessageRepository;
+            _storeCatalogClient = storeCatalogClient;
         }
 
-        public async Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request)
+        public async Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request,
+            CancellationToken cancellationToken = default)
         {
-            if (request == null)
-                throw new BadRequestException("Request data is null.");
-
-            if (request.Items == null || !request.Items.Any())
-                throw new BadRequestException("Order must have at least one item.");
-
-            var order = request.ToEntity(userId);
+            var order = await BuildValidatedOrderAsync(userId, request, cancellationToken);
 
             var payload = JsonSerializer.Serialize(new CreateOrderEvent
             {
@@ -73,21 +71,15 @@ namespace StealDeal.Services.Order.Application.Services
             return order.ToResponse();
         }
 
-        public async Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles)
+        public async Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles,
+            CancellationToken cancellationToken = default)
         {
             var order = await _orderRepository.GetByIdAsync(orderId);
             if (order == null)
                 throw new NotFoundException("Order not found.");
 
-            // Verification check
-            bool isAdmin = OrderRoles.IsAdministrator(roles);
-            bool isBuyer = order.UserId == userId;
-            // In a real microservice, Seller ownership of order.StoreId should be verified.
-            // For now, we allow access if the user is the Admin, the Buyer, or any Seller.
-            bool isSeller = roles.Contains(OrderRoles.Seller, StringComparer.OrdinalIgnoreCase);
-
-            if (!isAdmin && !isBuyer && !isSeller)
-                throw new ForbiddenException("You do not have permission to view this order.");
+            if (order.UserId != userId)
+                await EnsureStoreOwnerAsync(order.StoreId, userId, roles, cancellationToken);
 
             return order.ToResponse();
         }
@@ -98,54 +90,131 @@ namespace StealDeal.Services.Order.Application.Services
             return orders.Select(o => o.ToResponse());
         }
 
-        public async Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid ownerId)
+        public async Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid userId,
+            IEnumerable<string> roles, CancellationToken cancellationToken = default)
         {
-            // Note: In production, verify that ownerId actually owns storeId via cross-service call or JWT claims.
+            await EnsureStoreOwnerAsync(storeId, userId, roles, cancellationToken);
             var orders = await _orderRepository.GetByStoreIdAsync(storeId);
             return orders.Select(o => o.ToResponse());
         }
 
-        public async Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request)
+        public async Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles,
+            UpdateOrderStatusRequest request, CancellationToken cancellationToken = default)
         {
             var order = await _orderRepository.GetByIdAsync(orderId);
             if (order == null)
                 throw new NotFoundException("Order not found.");
 
-            bool isAdmin = OrderRoles.IsAdministrator(roles);
-            bool isBuyer = order.UserId == userId;
-            bool isSeller = roles.Contains(OrderRoles.Seller, StringComparer.OrdinalIgnoreCase);
+            // Authorize even an idempotent request before returning order details.
+            if (order.UserId != userId)
+                await EnsureStoreOwnerAsync(order.StoreId, userId, roles, cancellationToken);
 
-            // Validate status transitions & permissions
-            string currentStatus = order.Status;
-            string newStatus = request.Status.Trim();
-
-            if (currentStatus.Equals(newStatus, StringComparison.OrdinalIgnoreCase))
+            if (request == null || string.IsNullOrWhiteSpace(request.Status))
+                throw new BadRequestException("Status is required.");
+            if (!request.Status.Trim().Equals(OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+                throw new ConflictException("This endpoint only supports cancelling pending orders. Payment and NoShow use their dedicated flows.");
+            if (order.Status.Equals(OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
                 return order.ToResponse();
+            if (!order.Status.Equals(OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+                throw new ConflictException("Only pending orders can be cancelled.");
 
-            if (newStatus.Equals(OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
-            {
-                // Both buyer and seller can cancel, but only if it is still "Pending"
-                if (!isBuyer && !isSeller && !isAdmin)
-                    throw new ForbiddenException("You do not have permission to cancel this order.");
-
-                if (!currentStatus.Equals(OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase))
-                    throw new BadRequestException("Only pending orders can be cancelled.");
-            }
-            else
-            {
-                // Status progression (e.g., Confirmed, Preparing, ReadyForPickup, Completed) is managed by Seller or Admin
-                if (!isSeller && !isAdmin)
-                    throw new ForbiddenException("Only sellers or admins can update order progression status.");
-            }
-
-            order.Status = newStatus;
-            order.UpdatedAt = DateTime.UtcNow;
-
-            _orderRepository.Update(order);
-            await _unitOfWork.SaveChangesAsync();
+            var updatedAtUtc = DateTime.UtcNow;
+            if (!await _orderRepository.TryCancelPendingAsync(orderId, updatedAtUtc, cancellationToken))
+                throw new ConflictException("Order status changed. Reload the order before trying again.");
+            order.Status = OrderStatuses.Cancelled;
+            order.UpdatedAt = updatedAtUtc;
 
             return order.ToResponse();
         }
+
+        private async Task EnsureStoreOwnerAsync(Guid storeId, Guid userId, IEnumerable<string> roles,
+            CancellationToken cancellationToken)
+        {
+            if (storeId == Guid.Empty)
+                throw new BadRequestException("Store id is required.");
+            if (OrderRoles.IsAdministrator(roles))
+                return;
+            if (!roles.Contains(OrderRoles.Seller, StringComparer.OrdinalIgnoreCase))
+                throw new ForbiddenException("Only the store owner or an administrator can access this order.", OrderReasonCodes.StoreOwnershipRequired);
+
+            var store = await _storeCatalogClient.GetStoreAsync(storeId, cancellationToken)
+                ?? throw new NotFoundException("Store not found.");
+            if (store.OwnerId != userId)
+                throw new ForbiddenException("You do not own this store.", OrderReasonCodes.StoreOwnershipRequired);
+        }
+
+        private async Task<OrderProfile> BuildValidatedOrderAsync(Guid userId, CreateOrderRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (userId == Guid.Empty)
+                throw new UnauthorizedException("User is not authenticated.");
+            if (request == null || request.StoreId == Guid.Empty || request.Items == null || request.Items.Count == 0)
+                throw new BadRequestException("Store and at least one order item are required.");
+            if (request.Items.Any(item => item == null || item.BagId == Guid.Empty || item.Quantity <= 0))
+                throw new BadRequestException("Every order item needs a bag id and a positive quantity.");
+            if (string.IsNullOrWhiteSpace(request.ContactNameSnapshot) || string.IsNullOrWhiteSpace(request.ContactPhoneSnapshot) ||
+                string.IsNullOrWhiteSpace(request.DeliveryType))
+                throw new BadRequestException("Contact name, contact phone and delivery type are required.");
+            if (request.DeliveryFee < 0 || request.VoucherDiscount < 0)
+                throw new BadRequestException("Delivery fee and voucher discount cannot be negative.");
+
+            var store = await _storeCatalogClient.GetStoreAsync(request.StoreId, cancellationToken)
+                ?? throw new NotFoundException("Store not found.");
+            if (!store.IsActive || !store.IsVerify)
+                throw new BadRequestException("The store is not available for orders.");
+
+            var now = DateTime.UtcNow;
+            var pickupStart = DateTime.MinValue;
+            var pickupEnd = DateTime.MaxValue;
+            var items = new List<CreateOrderItemRequest>();
+            foreach (var group in request.Items.GroupBy(item => item.BagId))
+            {
+                var quantity = group.Sum(item => (long)item.Quantity);
+                if (quantity > int.MaxValue)
+                    throw new BadRequestException("Requested quantity is too large.");
+                var bag = await _storeCatalogClient.GetBagAsync(group.Key, cancellationToken)
+                    ?? throw new NotFoundException($"Bag with ID {group.Key} not found.");
+                ValidateBag(bag, request.StoreId, (int)quantity, now);
+                var bagStart = ToUtc(bag.PickupStartTime);
+                var bagEnd = ToUtc(bag.PickupEndTime);
+                if (bagStart > pickupStart) pickupStart = bagStart;
+                if (bagEnd < pickupEnd) pickupEnd = bagEnd;
+                items.Add(new CreateOrderItemRequest
+                {
+                    BagId = bag.Id, BagNameSnapshot = bag.Name,
+                    UnitPriceSnapshot = bag.SalePrice, Quantity = (int)quantity
+                });
+            }
+
+            var isPickup = request.DeliveryType.Trim().Equals("Pickup", StringComparison.OrdinalIgnoreCase);
+            if (isPickup && pickupStart >= pickupEnd)
+                throw new BadRequestException("The bags do not have an overlapping pickup window. Place separate orders.");
+
+            // Both entry points use server snapshots; never take the deadline from the caller/cart.
+            request.StoreNameSnapshot = store.Name;
+            request.Items = items;
+            request.DeliveryType = isPickup ? "Pickup" : request.DeliveryType.Trim();
+            request.DeliveryAddress ??= string.Empty;
+            return request.ToEntity(userId, isPickup ? pickupEnd : null);
+        }
+
+        private static void ValidateBag(StoreBagClientResponse bag, Guid storeId, int quantity, DateTime nowUtc)
+        {
+            if (bag.StoreId != storeId)
+                throw new BadRequestException($"Bag '{bag.Name}' does not belong to the selected store.");
+            if (bag.QuantityRemaining < quantity)
+                throw new BadRequestException($"Bag '{bag.Name}' does not have enough stock.");
+            var start = ToUtc(bag.PickupStartTime);
+            var end = ToUtc(bag.PickupEndTime);
+            if (start == default || start >= end || end <= nowUtc || ToUtc(bag.ExpiryDate) <= nowUtc)
+                throw new BadRequestException($"Bag '{bag.Name}' has an invalid or expired pickup window.");
+            if (bag.SalePrice < 0 || bag.Status?.Trim().ToLowerInvariant() is
+                "inactive" or "deleted" or "soldout" or "sold_out" or "sold out" or "expired" or "cancelled" or "canceled" or "draft")
+                throw new BadRequestException($"Bag '{bag.Name}' is not available for checkout.");
+        }
+
+        private static DateTime ToUtc(DateTime value) => value.Kind == DateTimeKind.Local
+            ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
         public async Task<OrderReviewEligibilityResponse> CheckReviewEligibilityAsync(Guid orderId, Guid buyerId, Guid bagId)
         {

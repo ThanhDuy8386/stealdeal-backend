@@ -56,6 +56,9 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
                 entity.Property(o => o.PickupCode)
                     .HasMaxLength(50);
 
+                entity.Property(o => o.PickupDeadlineVerified)
+                    .HasDefaultValue(false);
+
                 entity.Property(o => o.Status)
                     .IsRequired()
                     .HasMaxLength(50);

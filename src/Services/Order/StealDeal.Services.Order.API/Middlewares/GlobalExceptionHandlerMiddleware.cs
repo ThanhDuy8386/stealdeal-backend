@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Order.Application.Exceptions;
+using StealDeal.Services.Order.Application.Constants;
 
 namespace StealDeal.Services.Order.API.Middlewares
 {
@@ -36,6 +37,7 @@ namespace StealDeal.Services.Order.API.Middlewares
                 ForbiddenException => (403, "Forbidden"),
                 NotFoundException => (404, "Not Found"),
                 ConflictException => (409, "Conflict"),
+                DependencyUnavailableException => (503, "Service Unavailable"),
                 _ => (500, "Internal Server Error")
             };
 
@@ -54,6 +56,11 @@ namespace StealDeal.Services.Order.API.Middlewares
                 Detail = statusCode == 500 ? "An unexpected error occurred. Please try again later." : ex.Message,
                 Instance = context.Request.Path
             };
+
+            if (ex is ForbiddenException { ReasonCode: not null } forbidden)
+                problemDetails.Extensions["reasonCode"] = forbidden.ReasonCode;
+            if (ex is DependencyUnavailableException)
+                problemDetails.Extensions["reasonCode"] = OrderReasonCodes.DependencyUnavailable;
 
             await context.Response.WriteAsJsonAsync(problemDetails);
         }

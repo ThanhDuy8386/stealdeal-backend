@@ -26,11 +26,10 @@ namespace StealDeal.Services.Order.API.Controllers
 
         [HttpPost]
         [Authorize]
-        public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
+        public async Task<IActionResult> Create([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
-            var result = await _orderService.CreateOrderAsync(userId, request);
-            // var result = await _orderService.CreateOrderAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            var result = await _orderService.CreateOrderAsync(userId, request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -53,11 +52,11 @@ namespace StealDeal.Services.Order.API.Controllers
 
         [HttpGet("{id:guid}")]
         [Authorize]
-        public async Task<IActionResult> GetById(Guid id)
+        public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var roles = GetCurrentUserRoles();
-            var result = await _orderService.GetOrderByIdAsync(id, userId, roles);
+            var result = await _orderService.GetOrderByIdAsync(id, userId, roles, cancellationToken);
             return Ok(result);
         }
 
@@ -72,20 +71,20 @@ namespace StealDeal.Services.Order.API.Controllers
 
         [HttpGet("store/{storeId:guid}")]
         [Authorize(Roles = OrderRoles.SellerOrAdministrator)]
-        public async Task<IActionResult> GetStoreOrders(Guid storeId)
+        public async Task<IActionResult> GetStoreOrders(Guid storeId, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
-            var result = await _orderService.GetStoreOrdersAsync(storeId, userId);
+            var result = await _orderService.GetStoreOrdersAsync(storeId, userId, GetCurrentUserRoles(), cancellationToken);
             return Ok(result);
         }
 
         [HttpPatch("{id:guid}/status")]
         [Authorize]
-        public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateOrderStatusRequest request)
+        public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateOrderStatusRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var roles = GetCurrentUserRoles();
-            var result = await _orderService.UpdateOrderStatusAsync(id, userId, roles, request);
+            var result = await _orderService.UpdateOrderStatusAsync(id, userId, roles, request, cancellationToken);
             return Ok(result);
         }
 
@@ -107,11 +106,11 @@ namespace StealDeal.Services.Order.API.Controllers
                       ?? User.FindFirstValue("sub");
 
 
-            if (string.IsNullOrEmpty(sub))
+            if (!Guid.TryParse(sub, out var userId) || userId == Guid.Empty)
                 throw new Application.Exceptions.UnauthorizedException("User is not authenticated.");
 
 
-            return Guid.Parse(sub);
+            return userId;
         }
 
         private string[] GetCurrentUserRoles()

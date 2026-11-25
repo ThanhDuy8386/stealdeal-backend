@@ -97,6 +97,11 @@ namespace StealDeal.Services.Order.Infrastructure.Migrations
                     b.Property<DateTime?>("PickupDeadline")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("PickupDeadlineVerified")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)

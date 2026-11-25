@@ -62,6 +62,7 @@ builder.Services.AddHttpClient<IStoreCatalogClient, StoreCatalogHttpClient>((ser
         .GetRequiredService<Microsoft.Extensions.Options.IOptions<StoreServiceSettings>>()
         .Value;
     httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+    httpClient.Timeout = TimeSpan.FromSeconds(10);
 });
 
 // ── Authentication / JWT ──────────────────────────────────

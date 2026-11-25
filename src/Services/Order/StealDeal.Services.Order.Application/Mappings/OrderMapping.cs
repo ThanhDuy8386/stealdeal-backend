@@ -5,12 +5,13 @@ using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Domain.Models;
 using StealDeal.Services.Order.Domain.Constants;
+using StealDeal.Services.Order.Domain.Policies;
 
 namespace StealDeal.Services.Order.Application.Mappings
 {
     public static class OrderMapping
     {
-        public static OrderProfile ToEntity(this CreateOrderRequest request, Guid userId)
+        public static OrderProfile ToEntity(this CreateOrderRequest request, Guid userId, DateTime? pickupDeadlineUtc)
         {
             var orderId = Guid.NewGuid();
             var items = request.Items.Select(itemRequest => new OrderItem
@@ -50,9 +51,8 @@ namespace StealDeal.Services.Order.Application.Mappings
                 DeliveryAddress = request.DeliveryAddress.Trim(),
                 PickupCode = pickupCode,
                 Status = OrderStatuses.Pending,
-                PickupDeadline = request.DeliveryType.Equals("Pickup", StringComparison.OrdinalIgnoreCase) 
-                    ? DateTime.UtcNow.AddDays(1) // Example default: 24h deadline to pickup
-                    : null,
+                PickupDeadline = pickupDeadlineUtc,
+                PickupDeadlineVerified = pickupDeadlineUtc.HasValue,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 Items = items
@@ -62,6 +62,8 @@ namespace StealDeal.Services.Order.Application.Mappings
         public static OrderResponse ToResponse(this OrderProfile order)
         {
             if (order == null) return null!;
+
+            var noShowIneligibleReason = OrderNoShowPolicy.GetIneligibleReason(order, DateTime.UtcNow);
 
             return new OrderResponse
             {
@@ -78,7 +80,10 @@ namespace StealDeal.Services.Order.Application.Mappings
                 DeliveryAddress = order.DeliveryAddress,
                 PickupCode = order.PickupCode,
                 Status = order.Status,
-                PickupDeadline = order.PickupDeadline,
+                PickupDeadline = order.PickupDeadline.HasValue
+                    ? DateTime.SpecifyKind(order.PickupDeadline.Value, DateTimeKind.Utc) : null,
+                CanMarkNoShow = noShowIneligibleReason == null,
+                NoShowIneligibleReason = noShowIneligibleReason,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
                 Items = order.Items.Select(i => i.ToResponse()).ToList()
