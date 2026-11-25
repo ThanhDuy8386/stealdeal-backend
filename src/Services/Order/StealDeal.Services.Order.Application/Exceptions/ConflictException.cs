@@ -6,6 +6,11 @@ namespace StealDeal.Services.Order.Application.Exceptions
 {
     public class ConflictException : Exception
     {
-        public ConflictException(string message) : base(message) { }
+        public string? ReasonCode { get; }
+
+        public ConflictException(string message, string? reasonCode = null) : base(message)
+        {
+            ReasonCode = reasonCode;
+        }
     }
 }

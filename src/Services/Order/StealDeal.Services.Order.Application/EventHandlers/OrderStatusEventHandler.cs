@@ -67,44 +67,24 @@ namespace StealDeal.Services.Order.Application.EventHandlers
             string targetStatus,
             CancellationToken cancellationToken)
         {
-            if (await _processedMessageRepository.ExistsAsync(context.MessageId, context.ConsumerName))
+            await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
-                return;
-            }
+                if (await _processedMessageRepository.ExistsAsync(context.MessageId, context.ConsumerName))
+                    return;
+                if (await _orderRepository.GetByIdAsync(orderId) == null)
+                    throw new InvalidOperationException($"Order '{orderId}' was not found.");
 
-            var order = await _orderRepository.GetByIdAsync(orderId);
-            if (order == null)
-            {
-                throw new InvalidOperationException($"Order '{orderId}' was not found.");
-            }
-
-            if (CanMoveToStatus(order.Status, targetStatus))
-            {
-                order.Status = targetStatus;
-                order.UpdatedAt = DateTime.UtcNow;
-                _orderRepository.Update(order);
-            }
-
-            await _processedMessageRepository.AddAsync(new ProcessedMessage
-            {
-                MessageId = context.MessageId,
-                ConsumerName = context.ConsumerName,
-                EventType = context.EventType,
-                AggregateId = orderId,
-                ProcessedAt = DateTime.UtcNow
-            });
-
-            await _unitOfWork.SaveChangesAsync();
-        }
-
-        private static bool CanMoveToStatus(string currentStatus, string targetStatus)
-        {
-            if (currentStatus.Equals(targetStatus, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            return currentStatus.Equals(OrderStatuses.Pending, StringComparison.OrdinalIgnoreCase);
+                // Check Pending in the UPDATE itself. A stale read or late event cannot reset NoShow.
+                await _orderRepository.TryUpdatePendingStatusAsync(orderId, targetStatus, DateTime.UtcNow, cancellationToken);
+                await _processedMessageRepository.AddAsync(new ProcessedMessage
+                {
+                    MessageId = context.MessageId,
+                    ConsumerName = context.ConsumerName,
+                    EventType = context.EventType,
+                    AggregateId = orderId,
+                    ProcessedAt = DateTime.UtcNow
+                });
+            }, cancellationToken);
         }
     }
 }

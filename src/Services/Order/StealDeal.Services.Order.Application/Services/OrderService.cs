@@ -12,32 +12,43 @@ using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Domain.Interfaces;
 using StealDeal.Services.Order.Domain.Models;
 using StealDeal.Services.Order.Domain.Constants;
+using StealDeal.Services.Order.Domain.Policies;
 using StealDeal.Services.Order.Application.Constants;
 
 namespace StealDeal.Services.Order.Application.Services
 {
     public class OrderService : IOrderService
     {
+        private static readonly JsonSerializerOptions EventJsonOptions = new(JsonSerializerDefaults.Web);
         private readonly IOrderRepository _orderRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IOutboxMessageRepository _outboxMessageRepository;
         private readonly IStoreCatalogClient _storeCatalogClient;
+        private readonly IIdentityClient _identityClient;
 
         public OrderService(
             IOrderRepository orderRepository,
             IUnitOfWork unitOfWork,
             IOutboxMessageRepository outboxMessageRepository,
-            IStoreCatalogClient storeCatalogClient)
+            IStoreCatalogClient storeCatalogClient,
+            IIdentityClient identityClient)
         {
             _orderRepository = orderRepository;
             _unitOfWork = unitOfWork;
             _outboxMessageRepository = outboxMessageRepository;
             _storeCatalogClient = storeCatalogClient;
+            _identityClient = identityClient;
         }
 
-        public async Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request,
+        public async Task<OrderResponse> CreateOrderAsync(Guid userId, string accessToken, CreateOrderRequest request,
             CancellationToken cancellationToken = default)
         {
+            if (userId == Guid.Empty)
+                throw new UnauthorizedException("User is not authenticated.");
+            var eligibility = await _identityClient.GetPurchaseEligibilityAsync(accessToken, cancellationToken);
+            if (!eligibility.CanCreateOrder)
+                throw new PurchaseRestrictionException(eligibility.Message!, OrderReasonCodes.TrustScorePurchaseSuspended, eligibility);
+
             var order = await BuildValidatedOrderAsync(userId, request, cancellationToken);
 
             var payload = JsonSerializer.Serialize(new CreateOrderEvent
@@ -56,17 +67,25 @@ namespace StealDeal.Services.Order.Application.Services
                 ).ToList()
             });
 
-            await _outboxMessageRepository.AddAsync(new OutboxMessage
+            await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
-                ExchangeName = "stealdeal.events",
-                ExchangeType = "topic",
-                RoutingKey = OrderEventTypes.OrderCreated,
-                EventType = "OrderCreatedEvent",
-                Payload = payload,
-                Status = "Pending"
-            });
-            await _orderRepository.AddAsync(order);
-            await _unitOfWork.SaveChangesAsync();
+                var pendingCount = await _orderRepository.CountPendingForUpdateAsync(userId, cancellationToken);
+                if (eligibility.MaxPendingOrders is int maximum && pendingCount >= maximum)
+                    throw new PurchaseRestrictionException(
+                        $"Bạn chỉ được có tối đa {maximum} đơn đang chờ thanh toán. Hãy thanh toán hoặc hủy đơn hiện tại trước khi đặt thêm.",
+                        OrderReasonCodes.PendingOrderLimitReached, eligibility);
+
+                await _outboxMessageRepository.AddAsync(new OutboxMessage
+                {
+                    ExchangeName = "stealdeal.events",
+                    ExchangeType = "topic",
+                    RoutingKey = OrderEventTypes.OrderCreated,
+                    EventType = "OrderCreatedEvent",
+                    Payload = payload,
+                    Status = "Pending"
+                });
+                await _orderRepository.AddAsync(order);
+            }, cancellationToken);
 
             return order.ToResponse();
         }
@@ -119,10 +138,70 @@ namespace StealDeal.Services.Order.Application.Services
                 throw new ConflictException("Only pending orders can be cancelled.");
 
             var updatedAtUtc = DateTime.UtcNow;
-            if (!await _orderRepository.TryCancelPendingAsync(orderId, updatedAtUtc, cancellationToken))
+            if (!await _orderRepository.TryUpdatePendingStatusAsync(orderId, OrderStatuses.Cancelled, updatedAtUtc, cancellationToken))
                 throw new ConflictException("Order status changed. Reload the order before trying again.");
             order.Status = OrderStatuses.Cancelled;
             order.UpdatedAt = updatedAtUtc;
+
+            return order.ToResponse();
+        }
+
+        public async Task<OrderResponse> MarkNoShowAsync(Guid orderId, Guid userId, IEnumerable<string> roles,
+            MarkOrderNoShowRequest? request, CancellationToken cancellationToken = default)
+        {
+            if (userId == Guid.Empty)
+                throw new UnauthorizedException("User is not authenticated.");
+            var order = await _orderRepository.GetByIdAsync(orderId)
+                ?? throw new NotFoundException("Order not found.");
+
+            // Unlike viewing/cancelling, being the buyer does not authorize this command.
+            // Keep the Store HTTP call outside the database transaction.
+            await EnsureStoreOwnerAsync(order.StoreId, userId, roles, cancellationToken);
+            var reason = string.IsNullOrWhiteSpace(request?.Reason)
+                ? MarkOrderNoShowRequest.DefaultReason : request.Reason.Trim();
+            if (reason.Length > MarkOrderNoShowRequest.MaximumReasonLength)
+                throw new BadRequestException("NoShow reason cannot exceed 800 characters.");
+            if (order.Status.Equals(OrderStatuses.NoShow, StringComparison.OrdinalIgnoreCase))
+                return order.ToResponse();
+
+            var occurredAtUtc = DateTime.UtcNow;
+            var ineligibleReason = OrderNoShowPolicy.GetIneligibleReason(order, occurredAtUtc);
+            if (ineligibleReason != null)
+                throw new ConflictException(ineligibleReason, OrderReasonCodes.NoShowNotEligible);
+
+            var pickupDeadlineUtc = DateTime.SpecifyKind(order.PickupDeadline!.Value, DateTimeKind.Utc);
+            await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                if (!await _orderRepository.TryMarkNoShowAsync(orderId, pickupDeadlineUtc, occurredAtUtc, cancellationToken))
+                {
+                    var current = await _orderRepository.GetByIdAsync(orderId);
+                    if (current?.Status.Equals(OrderStatuses.NoShow, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        order = current;
+                        return;
+                    }
+                    throw new ConflictException("Order changed. Reload it before marking NoShow.", OrderReasonCodes.NoShowNotEligible);
+                }
+
+                var messageId = Guid.NewGuid();
+                await _outboxMessageRepository.AddAsync(new OutboxMessage
+                {
+                    Id = messageId,
+                    ExchangeName = "stealdeal.events",
+                    ExchangeType = "topic",
+                    RoutingKey = OrderEventTypes.OrderNoShow,
+                    EventType = OrderEventTypes.OrderNoShow,
+                    CreatedAt = occurredAtUtc,
+                    Payload = JsonSerializer.Serialize(new OrderNoShowEvent
+                    {
+                        MessageId = messageId, OccurredAtUtc = occurredAtUtc,
+                        OrderId = order.Id, UserId = order.UserId, StoreId = order.StoreId,
+                        MarkedByUserId = userId, PickupDeadlineUtc = pickupDeadlineUtc, Reason = reason
+                    }, EventJsonOptions)
+                });
+                order.Status = OrderStatuses.NoShow;
+                order.UpdatedAt = occurredAtUtc;
+            }, cancellationToken);
 
             return order.ToResponse();
         }
@@ -231,15 +310,13 @@ namespace StealDeal.Services.Order.Application.Services
             if (!order.Items.Any(items => items.BagId == bagId))
                 throw new BadRequestException("This order does not contain the specified bag.");
 
-            // TODO: remove the pending check later
-            if (!order.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) && !order.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
-                throw new BadRequestException("Order is not eligible for review. Only completed (or pending) orders can be reviewed.");
-
-            bool isEligible = true; // For now, we assume that if the order is completed (or pending), it is eligible for review.
+            if (!order.Status.Equals(OrderStatuses.Confirmed, StringComparison.OrdinalIgnoreCase))
+                throw new BadRequestException("Only confirmed, paid orders are eligible for review.");
 
             return new OrderReviewEligibilityResponse
             {
-                IsEligible = isEligible,
+                // Payment confirmation makes the order eligible; it does not prove collection.
+                IsEligible = true,
                 OrderId = order.Id,
                 BuyerId = order.UserId,
                 BagId = bagId,

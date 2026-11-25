@@ -171,6 +171,7 @@ services:
       ConnectionStrings__OrderDb: "Server=sqlserver,1433;Database=StealDealOrderDb;User Id=sa;Password=${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required};TrustServerCertificate=True;Encrypt=False"
       CartService__BaseUrl: http://cart-api:5185
       StoreService__BaseUrl: http://store-api:5169
+      IdentityService__BaseUrl: http://identity-api:5158
     depends_on:
       sqlserver:
         condition: service_started
@@ -179,6 +180,8 @@ services:
       cart-api:
         condition: service_started
       store-api:
+        condition: service_started
+      identity-api:
         condition: service_started
 
   payment-api:

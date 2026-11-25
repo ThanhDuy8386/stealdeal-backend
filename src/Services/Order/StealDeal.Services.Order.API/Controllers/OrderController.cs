@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.Services.Interfaces;
 using StealDeal.Services.Order.Application.Constants;
@@ -29,7 +31,7 @@ namespace StealDeal.Services.Order.API.Controllers
         public async Task<IActionResult> Create([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
-            var result = await _orderService.CreateOrderAsync(userId, request, cancellationToken);
+            var result = await _orderService.CreateOrderAsync(userId, GetBearerToken(), request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -85,6 +87,19 @@ namespace StealDeal.Services.Order.API.Controllers
             var userId = GetCurrentUserId();
             var roles = GetCurrentUserRoles();
             var result = await _orderService.UpdateOrderStatusAsync(id, userId, roles, request, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Marks an eligible order as NoShow; Identity updates trust score asynchronously.</summary>
+        [HttpPost("{id:guid}/no-show")]
+        [Authorize(Roles = OrderRoles.SellerOrAdministrator)]
+        [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> MarkNoShow(Guid id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] MarkOrderNoShowRequest? request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _orderService.MarkNoShowAsync(
+                id, GetCurrentUserId(), GetCurrentUserRoles(), request, cancellationToken);
             return Ok(result);
         }
 

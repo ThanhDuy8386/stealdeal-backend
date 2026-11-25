@@ -23,6 +23,7 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
             modelBuilder.Entity<OrderProfile>(entity =>
             {
                 entity.HasKey(o => o.Id);
+                entity.HasIndex(o => new { o.UserId, o.Status });
 
                 entity.Property(o => o.StoreNameSnapshot)
                     .IsRequired()

@@ -131,6 +131,8 @@ namespace StealDeal.Services.Order.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("UserId", "Status");
+
                     b.ToTable("OrderProfiles");
                 });
 

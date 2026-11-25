@@ -43,7 +43,7 @@ namespace StealDeal.Services.Order.Application.Services
 
                 var createOrderRequest = BuildCreateOrderRequest(request, cart);
 
-                var order = await _orderService.CreateOrderAsync(userId, createOrderRequest, cancellationToken);
+                var order = await _orderService.CreateOrderAsync(userId, accessToken, createOrderRequest, cancellationToken);
 
                 await _cartClient.DeleteCartAsync(
                     accessToken,
