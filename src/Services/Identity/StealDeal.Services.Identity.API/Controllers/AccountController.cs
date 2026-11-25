@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StealDeal.Services.Identity.Application.DTOs.Requests;
+using StealDeal.Services.Identity.Application.DTOs.Responses;
 using StealDeal.Services.Identity.Application.Services.Interfaces;
 
 namespace StealDeal.Services.Identity.API.Controllers
@@ -23,6 +24,14 @@ namespace StealDeal.Services.Identity.API.Controllers
         public async Task<IActionResult> GetProfile()
         {
             var result = await _accountService.GetProfileAsync(GetCurrentUserId());
+            return Ok(result);
+        }
+
+        [HttpGet("purchase-eligibility")]
+        [ProducesResponseType(typeof(PurchaseEligibilityResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPurchaseEligibility(CancellationToken cancellationToken)
+        {
+            var result = await _accountService.GetPurchaseEligibilityAsync(GetCurrentUserId(), cancellationToken);
             return Ok(result);
         }
 

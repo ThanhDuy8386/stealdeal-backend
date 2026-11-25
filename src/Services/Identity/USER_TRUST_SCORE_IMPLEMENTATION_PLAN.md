@@ -1,6 +1,6 @@
 # User Trust Score — Kế hoạch triển khai backend
 
-Ngày tạo: 2026-11-10. Cập nhật: 2026-11-11. Trạng thái: đã implement bước 1–2; các bước 3–8 chưa implement.
+Ngày tạo: 2026-11-10. Cập nhật: 2026-11-25. Trạng thái: đã implement bước 1–4; các bước 5–8 chưa implement. Consumer bước 3 mặc định chỉ khai báo queue, chưa bật xử lý message.
 
 Phạm vi cập nhật: MVP chỉ hiển thị điểm trong user profile, thông báo hạn chế khi checkout và cho seller đánh dấu NoShow. Không làm giao diện/API quản lý trust score cho admin hoặc seller, không làm trang lịch sử điểm.
 
@@ -298,20 +298,58 @@ Lệnh dùng connection string của startup project và chỉ áp dụng các m
 
 ### Bước 3 — Payment và Identity consumer
 
-- [ ] Thêm UserId vào `PaymentCompletedEvent` và factory từ Transaction.
-- [ ] Giữ phát event chỉ trong happy path `Success`; không phát từ return URL hoặc nhánh RefundPending.
-- [ ] Thêm Identity consumer, queue riêng, bindings, retry/DLQ và DI/config.
-- [ ] Retry có giới hạn với scope/DbContext mới cho xung đột DB: duplicate key 2601/2627 và deadlock 1205. Lỗi có thể là SqlException trực tiếp từ atomic SQL hoặc nằm trong DbUpdateException từ SaveChanges. Không ACK trước khi commit; không retry vô hạn lỗi dữ liệu vĩnh viễn.
-- [ ] Dùng cùng tên queue `identity.trust-score-events` cho cả `payment.completed` và `order.no-show`; MVP một consumer, `ConsumerDispatchConcurrency = 1`, prefetch 1, await handler và ACK sau commit. Không tạo queue riêng theo instance hoặc một consumer ghi điểm khác cho từng loại event.
-- [ ] Kiểm tra các bản sao DTO/event envelope, camelCase serialization và messageId khớp Outbox.
-- [ ] Có cách xử lý message cũ thiếu UserId trước khi bật consumer.
+- [x] Thêm UserId vào `PaymentCompletedEvent` và factory từ Transaction.
+- [x] Giữ phát event chỉ trong happy path `Success`; không phát từ return URL hoặc nhánh RefundPending.
+- [x] Thêm Identity consumer, queue riêng, bindings, retry/DLQ và DI/config.
+- [x] Retry có giới hạn với scope/DbContext mới cho xung đột DB: duplicate key 2601/2627 và deadlock 1205. Lỗi có thể là SqlException trực tiếp từ atomic SQL hoặc nằm trong DbUpdateException từ SaveChanges. Không ACK trước khi commit; không retry vô hạn lỗi dữ liệu vĩnh viễn.
+- [x] Dùng cùng tên queue `identity.trust-score-events` cho cả `payment.completed` và `order.no-show`; MVP một consumer, `ConsumerDispatchConcurrency = 1`, prefetch 1, await handler và ACK sau commit. Không tạo queue riêng theo instance hoặc một consumer ghi điểm khác cho từng loại event.
+- [x] Kiểm tra các bản sao DTO/event envelope, camelCase serialization và messageId khớp Outbox.
+- [x] Có cách xử lý message cũ thiếu UserId trước khi bật consumer.
+
+Chi tiết triển khai bước 3:
+
+- Payment bổ sung `UserId = transaction.UserId` vào payload hiện có. DTO ở Order nhận thêm field này; logic cập nhật status của Order giữ nguyên. Không thêm event thưởng riêng hoặc thay đổi callback/return URL.
+- `TrustScoreEventHandler` đặt ở Application theo `IIntegrationEventHandler<T>` có sẵn, map hai DTO event sang service bước 2. Kiểm tra payload MessageId trùng broker MessageId, UserId/PaymentId bắt buộc; NoShow phải có StoreId và deadline UTC đã qua. Consumer không truy cập Payment/Order DB.
+- `TrustScoreConsumer` ở Infrastructure; một queue chính và một handler được await tại mỗi thời điểm. Tên consumer trong ProcessedMessages là `TrustScoreConsumer`; EventType dùng routing key canonical. Mỗi delivery/retry tạo scope mới; service bước 2 chịu trách nhiệm transaction và chống trùng.
+- Ba queue durable: `identity.trust-score-events`, `.retry`, `.dead-letter`. Queue chính bind hai routing key trên topic exchange `stealdeal.events`. Retry queue mặc định TTL 30 giây, dead-letter về **queue chính qua default exchange**, không quay về topic exchange để tránh gửi lại payment event sang Order.
+- Khi lỗi tạm thời, publish bản sao persistent vào retry queue, giữ MessageId/body và lưu routing key gốc trong header `x-trust-score-routing-key`, tăng `x-trust-score-retry-count`. Sau tối đa 5 retry (ngoài lần đầu), chuyển DLQ. NoShow thiếu ledger payment cũng theo cơ chế này để payment phía sau vẫn được xử lý.
+- Retry SQL 2601/2627/1205, timeout và lỗi SQL được provider đánh dấu transient, kể cả exception trực tiếp hoặc EF bọc bên trong. Input/JSON sai, user không tồn tại, MessageId bị dùng sai nghiệp vụ hoặc SQL constraint không transient được chuyển DLQ. Các lỗi chưa phân loại cũng có retry hữu hạn.
+- Publish vào retry/DLQ có `mandatory=true` và publisher confirms; chỉ ACK bản gốc sau khi broker xác nhận bản sao. Xử lý thành công thì chỉ ACK sau commit DB. Nếu publish/ACK hoặc kết nối lỗi, đóng session và kết nối lại; delivery chưa ACK có thể được giao lại và được chống trùng bằng bước 2.
+- `TrustScoreConsumerSettings` được bind và validate khi startup. `Enabled=false` mặc định: vẫn kết nối RabbitMQ, khai báo topology/bindings để nhận và giữ event, nhưng chưa đăng ký consume. Sau khi bật bằng config phải restart Identity. Không thêm migration hay sửa hai model ở bước này.
+- Đã đối chiếu lại với `StoreVerifiedConsumer`/`StoreVerifiedEventHandler` của Identity và `OrderStatusConsumer`/`OrderStatusEventHandler`: dùng constructor thường với private readonly fields, `StartConsumerAsync`, `OnMessageReceivedAsync`, `DispatchToHandlerAsync`, `DeserializeEvent`, `CreateEventContext`; cấu hình có `ExchangeType`, `BindingKeys`, `PrefetchCount=1` giống mẫu consumer nhiều event. Không thêm base consumer hoặc framework messaging mới. Riêng lifecycle giữ reconnect cả session khi publish/ACK hoặc channel lỗi để delivery chưa ACK được giao lại; retry/DLQ là phần bổ sung cần thiết của flow trust score.
+- DTO/handler NoShow đã sẵn sàng nhận contract; producer/endpoint NoShow phía Order vẫn thuộc bước 6.
+
+Triển khai lần đầu và xử lý dữ liệu cũ:
+
+1. Deploy Identity với `TrustScoreConsumer:Enabled=false`, chạy để khai báo queue/bindings; kiểm tra queue đã tồn tại trên broker trước khi Payment mới publish. Chọn mốc bắt đầu nhận event làm cutover; không tự phát lại toàn bộ order lịch sử.
+2. Kiểm tra dữ liệu và apply migration bước 2 vào Identity DB. Deploy Payment có payload UserId trước khi bật xử lý. Payment chưa publish các message Outbox Pending cũ thì đối chiếu từng `OrderId`/`PaymentId` với Transaction để bổ sung đúng UserId; giữ MessageId và các field khác. Không sửa/xóa lịch sử Outbox đã xử lý hàng loạt.
+3. Kiểm tra backlog của queue mới. Message cũ đã vào broker nhưng thiếu UserId sẽ được giữ trong `.dead-letter` khi bật consumer, không được cộng cho Guid.Empty, không ghi ProcessedMessage và không bị bỏ im lặng. Người vận hành đối chiếu Transaction của đúng PaymentId/OrderId, xác nhận payment được chấp nhận Success theo cutover rồi bổ sung UserId trước khi replay. Không dùng nhánh RefundPending để backfill điểm.
+4. Đặt `TrustScoreConsumer:Enabled=true` (hoặc env `TrustScoreConsumer__Enabled=true`) và restart Identity. Thử payment mới, kiểm tra ledger/counters/ProcessedMessages và profile. Nếu cần replay DLQ sau khi sửa nguyên nhân: publish vào **default exchange** với routing key `identity.trust-score-events`, giữ MessageId trong AMQP property và payload giống nhau, Type là routing key nghiệp vụ, header `x-trust-score-routing-key` là `payment.completed` hoặc `order.no-show`, reset `x-trust-score-retry-count` về integer 0. Chỉ loại bản DLQ sau khi xác nhận publish thành công; replay lặp vẫn được chống trùng. Không publish replay lên topic exchange vì sẽ gửi lại sang Order.
+5. Không có auto-backfill cho order đã Confirmed trước cutover. Trước bước 6, chỉ cho NoShow với order đã có ledger payment hoặc thực hiện backfill có kiểm soát theo bước 8; hết retry mà vẫn thiếu prerequisite thì giữ DLQ để xử lý.
+
+Lưu ý vận hành: không đổi tên queue khi scale instance. TTL được khai báo bằng queue argument nên thay `RetryDelaySeconds` trên queue đã tồn tại cần quy trình đổi topology/policy có kiểm soát; không xóa queue còn message. Retry dùng TTL/dead-letter tiêu chuẩn, chưa bổ sung bảo đảm dead-letter at-least-once bằng quorum queue cho sự cố broker/cluster.
+
+Kiểm chứng bước 3 (2026-11-25): build Identity, Payment và Order thành công. Harness tạm ngoài repo đã qua 30 kiểm tra contract/handler/consumer với channel giả, gồm ACK sau handler, publish retry trước ACK, giới hạn retry, giữ payload lỗi trong DLQ, scope mới, SQL exception trực tiếp/EF-wrapped và các nhánh IPN không được thưởng. Thêm 6 kiểm tra integration với SQL Server LocalDB trên DB test riêng đã pass: consumer ghi điểm/ledger/processed thật, chống trùng cùng message/cùng order, phạt NoShow, NoShow trước payment không ghi dữ liệu và retry thành công sau payment với scope mới; DB test được xóa sau chạy. Chưa kiểm chứng TTL, publisher confirms hoặc reconnect trên RabbitMQ thật vì môi trường hiện tại không có broker đang chạy. Không thêm project test vào solution, chưa bật consumer hoặc apply migration lên DB ứng dụng. Build ban đầu còn warning NuGet bảo mật của dependency sẵn có.
+
+Kiểm chứng sau review cấu trúc: build Identity thành công; chạy lại 31 kiểm tra contract/consumer/config và 6 kiểm tra SQL integration đều pass. Kiểm tra thêm binding từ appsettings thực tế: `BindingKeys` không khai báo sẵn phần tử trong settings để tránh configuration binder nối trùng với mảng JSON; startup validation yêu cầu đúng hai key và prefetch 1. Đã xóa `Program.cs`, `Step3Checks.csproj` cùng output build của harness trong thư mục tạm ngoài repo theo yêu cầu; không có dependency runtime vào các file đó.
 
 ### Bước 4 — Profile và endpoint purchase eligibility
 
-- [ ] Kiểm tra profile hiện có trả `userTrustScore.score` từ DB đúng sau khi event được xử lý; dùng lại DTO/mapping hiện có.
-- [ ] Implement GET purchase eligibility cho chính user, xác thực qua JWT.
-- [ ] Chốt response lý do hạn chế và thời điểm hết hạn; không lộ ghi chú nội bộ.
-- [ ] Không thêm endpoint trust score riêng, history hoặc admin management.
+- [x] Kiểm tra profile hiện có trả `userTrustScore.score` từ DB đúng sau khi event được xử lý; dùng lại DTO/mapping hiện có.
+- [x] Implement GET purchase eligibility cho chính user, xác thực qua JWT.
+- [x] Chốt response lý do hạn chế và thời điểm hết hạn; không lộ ghi chú nội bộ.
+- [x] Không thêm endpoint trust score riêng, history hoặc admin management.
+
+Chi tiết triển khai bước 4:
+
+- Thêm `GET /api/identity/account/purchase-eligibility` vào `AccountController` đang có `[Authorize]`. UserId lấy bằng helper JWT hiện có, không nhận userId từ query/body; response `200` dùng `PurchaseEligibilityResponse` và có metadata schema cho OpenAPI.
+- Theo cấu trúc API account hiện tại: controller gọi `IAccountService.GetPurchaseEligibilityAsync`; `AccountService` kiểm tra tài khoản còn active/chưa deleted bằng `GetActiveUserAsync`, rồi chuyển sang `ITrustScoreService.GetPurchaseEligibilityAsync` của bước 2. Không lặp logic policy tại controller hoặc AccountService. CancellationToken được chuyển đến service tính policy.
+- JWT thiếu/sai/hết hạn, subject không hợp lệ hoặc account không còn active/tồn tại: `401` theo convention profile hiện có. User bị giới hạn trust score vẫn nhận `200` cùng `canCreateOrder=false`, reasonCode/message và restrictedUntilUtc; đây là API đọc policy, chưa phải enforcement tạo đơn.
+- Profile giữ nguyên controller/service/DTO/mapping: `UserRepository.GetByIdAsync` đã include `UserTrustScore`; mapping lấy điểm/counters hiện tại từ DB và không include ledger/Note. Đã xác minh qua HTTP ở request mới sau khi handler payment/NoShow commit vào DB.
+- Eligibility giữ đúng policy bước 2: default 100 nếu thiếu trust row, ngưỡng 49/50/79/80, cooldown UTC từ ledger; tại đúng thời điểm hết hạn trả Limited và restrictedUntilUtc=null. GET không tạo row, sửa counters, ghi ledger/processed hoặc gia hạn khóa.
+- Không thêm config/DI/migration mới: `AccountService` và `ITrustScoreService` đã được đăng ký. Không sửa hai model, không thêm history/admin endpoint hoặc enforcement phía Order; bước 7 sẽ nối kiểm tra quyền mua vào tạo đơn.
+
+Kiểm chứng bước 4 (2026-11-25): build Identity API thành công, còn warning NuGet dependency hiện có. Harness tạm chạy host HTTP riêng với controller/middleware thật, JWT hợp lệ/sai và SQL Server LocalDB trên DB `StealDeal_TrustScoreStep4_Tests_<GUID>` đã qua 26 kiểm tra: auth/active account, không đọc chéo user qua query, profile sau cộng/trừ điểm, policy/cooldown tại biên, không lộ ghi chú, đọc không ghi DB và OpenAPI schema. Không chạy các hosted consumer hoặc dùng database ứng dụng. DB test và source/output của harness đã được dọn sau kiểm tra; không thêm test project vào solution.
 
 ### Bước 5 — Order ownership, deadline và danh sách kiểm kê
 

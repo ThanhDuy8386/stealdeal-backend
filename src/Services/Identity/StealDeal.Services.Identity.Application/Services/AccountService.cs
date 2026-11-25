@@ -16,25 +16,35 @@ namespace StealDeal.Services.Identity.Application.Services
         private readonly IPasswordHasher _passwordHasher;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IS3StorageService _s3StorageService;
+        private readonly ITrustScoreService _trustScoreService;
 
         public AccountService(
             IUserRepository userRepository,
             IRefreshTokenRepository refreshTokenRepository,
             IPasswordHasher passwordHasher,
             IUnitOfWork unitOfWork,
-            IS3StorageService s3StorageService)
+            IS3StorageService s3StorageService,
+            ITrustScoreService trustScoreService)
         {
             _userRepository = userRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _passwordHasher = passwordHasher;
             _unitOfWork = unitOfWork;
             _s3StorageService = s3StorageService;
+            _trustScoreService = trustScoreService;
         }
 
         public async Task<UserDetailResponse> GetProfileAsync(Guid userId)
         {
             var user = await GetActiveUserAsync(userId);
             return user.ToUserDetailResponse();
+        }
+
+        public async Task<PurchaseEligibilityResponse> GetPurchaseEligibilityAsync(
+            Guid userId, CancellationToken cancellationToken = default)
+        {
+            await GetActiveUserAsync(userId);
+            return await _trustScoreService.GetPurchaseEligibilityAsync(userId, cancellationToken);
         }
 
         public async Task<UserDetailResponse> UpdateProfileAsync(Guid userId, UpdateMyProfileRequest request)

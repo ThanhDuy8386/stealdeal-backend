@@ -1,8 +1,8 @@
 # User Trust Score — Contract MVP
 
-Chốt ngày 2026-11-11, thuộc bước 1 của `USER_TRUST_SCORE_IMPLEMENTATION_PLAN.md`.
+Chốt ngày 2026-11-11; cập nhật bước 4 ngày 2026-11-25, theo `USER_TRUST_SCORE_IMPLEMENTATION_PLAN.md`.
 
-Đây là contract cho các bước tiếp theo, chưa phải danh sách endpoint mới đã chạy. Bước 1 bổ sung constants, settings có startup validation và DTO. Bước 2 đã có service/repository xử lý điểm và tính policy nội bộ; chưa bật consumer, endpoint mới hoặc enforce hạn chế mua tại Order.
+Trạng thái: bước 1–4 đã implement. Bước 1 bổ sung constants, settings có startup validation và DTO. Bước 2 có service/repository xử lý điểm và tính policy nội bộ. Bước 3 đã nối Payment event và Identity consumer; mặc định chỉ khai báo queue, chưa bật xử lý. Bước 4 đã mở purchase eligibility và kiểm chứng profile. Endpoint NoShow và enforcement tạo đơn tại Order chưa implement.
 
 ## Phạm vi
 
@@ -43,17 +43,33 @@ Section `TrustScore` tại Identity:
 | Purchase tier | `Normal`, `Limited`, `TemporarilyBlocked` |
 | Role quản trị | `Admin`, `SuperAdmin`, quyền tương đương trong các API order thuộc phạm vi này |
 
-Các service có DTO/constants riêng, không tham chiếu project của service khác chỉ để chia sẻ contract. Giữ tên/giá trị wire contract đồng nhất. Payload Payment bổ sung UserId và event NoShow được nối vào producer/consumer ở bước 3/6, không phát event mới trong bước 1.
+Các service có DTO/constants riêng, không tham chiếu project của service khác chỉ để chia sẻ contract. Giữ tên/giá trị wire contract đồng nhất. Bước 3 đã bổ sung UserId phía Payment và DTO/handler của hai event phía Identity. Producer NoShow phía Order thuộc bước 6.
 
 Atomic UPDATE dùng điểm hiện tại của DB, clamp 0–100 và tăng counters trong cùng câu lệnh; OUTPUT trả ScoreBefore/ScoreAfter thực tế cho ledger. `TrustScoreUpdateResult` chỉ là object kết quả nội bộ, không thêm table/column hoặc thay property hai model hiện có. Nếu ledger/ProcessedMessage bị unique conflict, transaction rollback cả atomic UPDATE; consumer bước 3 retry bằng scope mới. Xung đột đồng thời tạo row còn thiếu cũng theo cơ chế unique UserId + rollback/retry.
+
+## Event contract đã nối ở bước 3
+
+`payment.completed`: `messageId`, `occurredAtUtc`, `orderId`, **`userId`** (mới, từ Transaction), `paymentId`, `amount`, `paymentMethod`, `gatewayRef`. Giữ nguyên routing key và các field cũ; Order vẫn nhận để cập nhật Confirmed, Identity nhận qua queue riêng để thưởng điểm.
+
+`order.no-show`: `messageId`, `occurredAtUtc`, `orderId`, `userId`, `storeId`, `markedByUserId`, `pickupDeadlineUtc`, `reason`. Identity đã có DTO/handler, Order sẽ phát ở bước 6. Deadline và occurred time đều UTC; occurred time phải sau deadline. Actor từ backend Order, không lấy trực tiếp từ client.
+
+AMQP `MessageId` phải là Guid khác rỗng và trùng payload `messageId`/Outbox Id. AMQP `Type`, nếu có, phải bằng routing key nghiệp vụ. Payload camelCase, Identity đọc không phân biệt hoa thường. Application service tiếp tục validate user/order, UTC timestamp và mức điểm; không nhận scoreDelta từ producer.
+
+Queue chính `identity.trust-score-events` bind cả hai routing key; một consumer tuần tự, prefetch 1. Retry queue `.retry` có delay 30 giây, tối đa 5 retry; `.dead-letter` giữ message lỗi vĩnh viễn hoặc hết retry. Retry giữ MessageId, routing key gốc qua header; ACK sau commit hoặc sau confirmed publish sang retry/DLQ. NoShow đến trước payment không ghi processed marker và được retry có delay.
+
+Section `TrustScoreConsumer`: `Enabled=false`, `ExchangeName=stealdeal.events`, `ExchangeType=topic`, `QueueName=identity.trust-score-events`, `BindingKeys=[payment.completed, order.no-show]`, `PrefetchCount=1`, `RetryDelaySeconds=30`, `MaxRetryCount=5`, `ReconnectDelaySeconds=10`. Các field exchange/bindings/prefetch theo convention consumer hiện có; startup validation giữ đúng hai binding và prefetch 1 của MVP. Dù chưa bật xử lý, Identity vẫn khai báo các queue/bindings. Bật `Enabled=true` và restart sau khi migration, producer và backlog đã được kiểm tra. Quy trình cutover/enrich payload cũ/replay DLQ nằm trong mục bước 3 của plan; không replay qua topic exchange sang cả Order.
 
 ## Profile: dùng API hiện có
 
 `GET /api/identity/account/profile`, yêu cầu JWT. Hiển thị `userTrustScore.score` từ response hiện có. Không cần gọi thêm API trust score và không trả ledger/ghi chú nội bộ.
 
-## Purchase eligibility: endpoint mới ở bước 4
+Bước 4 đã kiểm chứng profile qua HTTP sau khi handler payment/NoShow commit điểm vào SQL Server. Giữ nguyên DTO/mapping/repository hiện có, không thêm endpoint profile trust score riêng.
+
+## Purchase eligibility: đã implement ở bước 4
 
 `GET /api/identity/account/purchase-eligibility`, yêu cầu JWT. UserId chỉ lấy từ JWT, không nhận query/body userId. Order forward JWT của user khi gọi.
+
+Controller dùng `IAccountService` theo flow account hiện có; AccountService kiểm tra account active/chưa deleted rồi gọi trust-score service. JWT thiếu/sai/hết hạn, subject không hợp lệ hoặc account không còn active/tồn tại trả `401`. Kết quả bị hạn chế trust score vẫn là response `200` với `canCreateOrder=false`; `403` chỉ áp dụng khi Order enforce từ chối tạo đơn ở bước 7. Không có ghi chú nội bộ, ledger hoặc thông tin user khác trong response.
 
 Response `200`: `PurchaseEligibilityResponse` của Identity; Order đọc bằng `PurchaseEligibilityClientResponse`.
 
@@ -79,7 +95,7 @@ Ngưỡng và quota trong bảng là mặc định; response theo settings hiệ
 
 Order tự kiểm tra eligibility khi tạo order. FE không bắt buộc gọi trước và không tự tính policy. Identity không gọi Order để đếm Pending. API này chỉ đọc và không gia hạn khóa.
 
-Service bước 2 đọc eligibility mà không mở transaction ghi hoặc tạo/sửa trust row. Nếu user tồn tại nhưng thiếu trust row, trả policy mặc định ở mức 100; consumer khởi tạo row khi ghi nhận event. Không tạo ledger thưởng/phạt hoặc gia hạn khóa khi đọc. API vẫn được mở ở bước 4.
+Service bước 2 đọc eligibility mà không mở transaction ghi hoặc tạo/sửa trust row. Nếu user tồn tại nhưng thiếu trust row, trả policy mặc định ở mức 100; consumer khởi tạo row khi ghi nhận event. Không tạo ledger thưởng/phạt hoặc gia hạn khóa khi đọc. API đã mở ở bước 4; OpenAPI khai báo schema `PurchaseEligibilityResponse` cho response 200. Bước 7 sẽ thêm client/enforcement tại Order.
 
 ## NoShow: endpoint mới ở bước 6
 
@@ -130,6 +146,6 @@ Không thêm policy fields hoặc lộ điểm buyer trong lỗi seller đánh d
 - Không tự động thưởng/phạt lại toàn bộ order lịch sử khi deploy bước 1 hoặc bật tính năng sau này.
 - Chưa bật consumer mới hay backfill trong bước 1, nên chưa có thay đổi điểm/quyền mua cho user đang tồn tại.
 - Bước 2 đăng ký service/repository nội bộ, chưa có consumer hay controller gọi tự động. Migration `20261111102442_AddTrustScoreIntegrity` cần được áp dụng trước khi bật consumer; unique index và check constraints từ chối dữ liệu cũ trùng/điểm ngoài 0–100. Không có SQL preflight riêng hoặc index tối ưu cooldown trong bản MVP. Chưa áp dụng migration lên database ứng dụng trong quá trình implement.
-- Trước khi bật consumer ở bước 3 và NoShow ở bước 6, phải chốt cutover, xử lý message cũ thiếu UserId và các order Confirmed chưa có ledger thanh toán như plan bước 8.
+- Bước 3 đã có consumer nhưng `TrustScoreConsumer:Enabled=false` mặc định; vẫn khai báo queue để tránh mất event do chưa có binding riêng cho Identity. Payload cũ thiếu UserId được giữ trong DLQ, phải đối chiếu Transaction rồi enrich/replay theo runbook bước 3, không bỏ qua hoặc tự backfill tất cả lịch sử. Trước khi bật NoShow ở bước 6, xử lý order Confirmed chưa có ledger thanh toán theo cutover/backfill trong plan bước 8.
 - Backfill nếu cần là tác vụ riêng có kiểm soát/idempotency, không reset trust row hoặc chạy lại toàn bộ điểm một cách âm thầm.
 - Chưa có flow miễn/hoàn phạt hoặc đảo NoShow trong MVP. Không yêu cầu UI quản trị để hoàn thành backend/FE của phạm vi này.
