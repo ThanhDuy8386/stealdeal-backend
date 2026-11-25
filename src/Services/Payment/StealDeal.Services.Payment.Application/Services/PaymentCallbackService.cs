@@ -7,6 +7,7 @@ using StealDeal.Services.Payment.Application.Services.Interfaces;
 using StealDeal.Services.Payment.Domain.Constants;
 using StealDeal.Services.Payment.Domain.Interfaces;
 using StealDeal.Services.Payment.Domain.Models;
+using StealDeal.Services.Payment.Application.Exceptions;
 
 namespace StealDeal.Services.Payment.Application.Services
 {
@@ -49,57 +50,53 @@ namespace StealDeal.Services.Payment.Application.Services
                 return new VnPayIpnHandleResult("01", "Order not found");
             }
 
-            var transaction = await _transactionRepository.GetByGatewayRefAsync(callbackResult.GatewayRef);
-
-            if (transaction == null)
+            for (var attempt = 1; ; attempt++)
             {
-                return new VnPayIpnHandleResult("01", "Order not found");
-            }
+                var transaction = await _transactionRepository.GetByGatewayRefAsync(
+                    callbackResult.GatewayRef);
 
-            if (!AmountsMatch(transaction.Amount, callbackResult.Amount))
-            {
-                return new VnPayIpnHandleResult("04", "Invalid amount");
-            }
+                if (transaction == null)
+                    return new VnPayIpnHandleResult("01", "Order not found");
 
-            if (transaction.Status.Equals(TransactionStatuses.Success, StringComparison.OrdinalIgnoreCase))
-            {
-                return new VnPayIpnHandleResult("02", "Order already confirmed");
-            }
+                if (!AmountsMatch(transaction.Amount, callbackResult.Amount))
+                    return new VnPayIpnHandleResult("04", "Invalid amount");
 
-            if (callbackResult.IsSuccess)
-            {
-                //Payment success but transaction status is refund_pending or refunded (refund was done)
-                if (IsRefundInProgressOrCompleted(transaction.Status))
+                if (transaction.Status.Equals(
+                    TransactionStatuses.Success, StringComparison.OrdinalIgnoreCase))
+                    return new VnPayIpnHandleResult("02", "Order already confirmed");
+
+                try
                 {
-                    return new VnPayIpnHandleResult("00", "Confirm success");
-                }
+                    if (callbackResult.IsSuccess)
+                    {
+                        if (IsRefundInProgressOrCompleted(transaction.Status))
+                            return new VnPayIpnHandleResult("00", "Confirm success");
 
-                //Payment success but transaction was cancel -> refund step
-                //money was take but transaction was cancel -> need to refund
-                if (IsFailedOrExpired(transaction.Status))
-                {
-                    await MarkLateSuccessForRefundAsync(transaction, callbackResult);
+                        if (IsFailedOrExpired(transaction.Status))
+                        {
+                            await MarkLateSuccessForRefundAsync(transaction, callbackResult);
+                            await _unitOfWork.SaveChangesAsync();
+                            return new VnPayIpnHandleResult("00", "Confirm success");
+                        }
+
+                        await MarkPaymentSuccessAsync(transaction, callbackResult);
+                        await _unitOfWork.SaveChangesAsync();
+                        return new VnPayIpnHandleResult("00", "Confirm success");
+                    }
+
+                    if (IsFailedOrExpired(transaction.Status) ||
+                        IsRefundInProgressOrCompleted(transaction.Status))
+                        return new VnPayIpnHandleResult("00", "Confirm success");
+
+                    await MarkPaymentFailedAsync(transaction, callbackResult);
                     await _unitOfWork.SaveChangesAsync();
                     return new VnPayIpnHandleResult("00", "Confirm success");
                 }
-
-                //Payment success with happy path
-                await MarkPaymentSuccessAsync(transaction, callbackResult);
-                await _unitOfWork.SaveChangesAsync();
-                return new VnPayIpnHandleResult("00", "Confirm success");
+                catch (PaymentWriteConflictException) when (attempt < 3)
+                {
+                    // Another worker saved first. Reload and decide using its new status.
+                }
             }
-
-            //transaction failed already, so mark confirm to prevent retry
-            if (IsFailedOrExpired(transaction.Status) ||
-                IsRefundInProgressOrCompleted(transaction.Status))
-            {
-                return new VnPayIpnHandleResult("00", "Confirm success");
-            }
-
-            await MarkPaymentFailedAsync(transaction, callbackResult);
-            await _unitOfWork.SaveChangesAsync();
-
-            return new VnPayIpnHandleResult("00", "Confirm success");
         }
 
         private async Task MarkPaymentSuccessAsync(

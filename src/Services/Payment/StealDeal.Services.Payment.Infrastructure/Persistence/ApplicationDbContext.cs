@@ -53,6 +53,8 @@ namespace StealDeal.Services.Payment.Infrastructure.Persistence
                 entity.Property(t => t.FailureReason)
                     .HasMaxLength(500);
 
+                entity.Property(t => t.RowVersion).IsRowVersion();
+
                 // 1:N Transaction -> Refunds
                 entity.HasMany(t => t.Refunds)
                     .WithOne(r => r.Transaction)
