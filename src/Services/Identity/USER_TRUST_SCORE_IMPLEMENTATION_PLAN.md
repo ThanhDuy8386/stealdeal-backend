@@ -1,6 +1,6 @@
 # User Trust Score — Kế hoạch triển khai backend
 
-Ngày tạo: 2026-11-10. Cập nhật: 2026-11-11. Trạng thái: đã implement bước 1; các bước 2–8 chưa implement.
+Ngày tạo: 2026-11-10. Cập nhật: 2026-11-11. Trạng thái: đã implement bước 1–2; các bước 3–8 chưa implement.
 
 Phạm vi cập nhật: MVP chỉ hiển thị điểm trong user profile, thông báo hạn chế khi checkout và cho seller đánh dấu NoShow. Không làm giao diện/API quản lý trust score cho admin hoặc seller, không làm trang lịch sử điểm.
 
@@ -18,6 +18,7 @@ Phạm vi cập nhật: MVP chỉ hiển thị điểm trong user profile, thôn
 - Không làm UI/API admin quản lý điểm, xem lịch sử điểm hoặc miễn/hoàn phạt trong MVP.
 - Hoàn tất backend, API contract và kiểm thử trước khi làm FE.
 - Không tự động refund hoặc trả tồn kho khi đánh dấu `NoShow`; đây là nghiệp vụ khác.
+- MVP vẫn chạy một instance Identity, một consumer trust score xử lý tuần tự cả hai routing key trên cùng queue. Điểm/counters đã được cập nhật bằng atomic SQL để không mất update khi có nhiều consumer; không dùng application lock. Khi scale vẫn giữ transaction, chống trùng và retry các xung đột insert/unique key.
 
 Cart TTL và thời hạn reservation/payment là các cơ chế khác nhau. Phần này giữ nguyên cơ chế hết hạn/release inventory hiện có, không thay thế nó bằng cart TTL.
 
@@ -198,7 +199,7 @@ Body không bắt buộc. Nếu muốn ghi chú bổ sung, có thể gửi:
 | `CreatedAt` | Thời điểm nghiệp vụ UTC từ event đã được backend tạo và xác thực; dùng nhất quán cho thời hạn khóa |
 
 - Thêm index/constraint bằng EF configuration/migration được phép; không thêm property vào hai model.
-- Điểm khởi tạo vẫn là 100; nếu user thiếu trust row, khởi tạo idempotent dưới cơ chế khóa phù hợp, không reset điểm của row đang tồn tại.
+- Điểm khởi tạo vẫn là 100; câu lệnh ghi điểm khởi tạo trust row còn thiếu khi ghi nhận event đầu tiên, không reset row đang tồn tại. Unique UserId chống tạo trùng; nếu hai transaction cùng insert thì một bên rollback/retry. API đọc eligibility không tạo/sửa row.
 - Không suy ra SuccessfulPickups bằng TotalOrders trừ NoShowCount vì còn đơn chưa hết giờ nhận hàng.
 - Không đổi ý nghĩa dữ liệu lịch sử đang có một cách âm thầm: kiểm tra dữ liệu thực tế trước migration, ghi rõ mốc bắt đầu tính nếu chưa có backfill.
 
@@ -225,8 +226,8 @@ MarkedByUserId, PickupDeadlineUtc, Reason
 - Unique business index cho ledger theo `(UserId, ReferenceType, ReferenceId, EventType)` với filter giới hạn hai loại event của tính năng này; chống producer phát lại cùng nghiệp vụ bằng messageId khác.
 - Trước khi thêm unique index: kiểm tra/trình bày cách xử lý dữ liệu trùng đang tồn tại; không xóa lịch sử tùy tiện.
 - Điểm, counters, TrustScoreEvent và ProcessedMessage lưu trong cùng DB transaction.
-- SQL Server: dùng transaction và khóa theo user, ví dụ `UPDLOCK, HOLDLOCK` trên trust row; không thêm property RowVersion, không chỉ dùng lock trong memory.
-- Đụng unique constraint do message trùng: rollback transaction, xác nhận nghiệp vụ đã được xử lý rồi ACK; không tăng counter lại.
+- Không có application lock: repository dùng `UPDATE SET Score = CASE ... Score + delta ...`, cập nhật TotalOrders/NoShowCount ngay trong DB. `OUTPUT deleted.Score, inserted.Score` trả điểm trước/sau thực tế để ghi ledger đúng khi chạm 0/100, không dùng điểm đọc trước đó từ Application. Transaction bảo đảm điểm/counters, ledger và ProcessedMessage cùng commit/rollback.
+- Đụng unique constraint: rollback transaction, không tăng counter lại. Consumer bước 3 xử lý retry/đọc lại để xác nhận duplicate rồi ACK; không thêm vòng retry riêng vào UnitOfWork.
 - NoShow đến trước PaymentSucceeded: retry có delay đến khi đã có ledger thanh toán của order.
 - Không retry nóng vô hạn. Có retry queue/DLQ, log dependency thiếu và cách replay sau khi khắc phục. Không copy nguyên cách NACK `requeue=false` nếu message có thể bị mất vì chưa có DLQ.
 - Clamp khiến kết quả phụ thuộc thứ tự, nên cần kiểm thử thứ tự giữa thưởng và phạt của cùng order, không chỉ chống trùng message.
@@ -263,17 +264,45 @@ Kiểm chứng bước 1 (2026-11-11): build API Identity và Order thành công
 
 ### Bước 2 — Identity persistence và domain service
 
-- [ ] Thêm repository trust score, ledger nội bộ và service tính policy; không tạo API/UI history.
-- [ ] Tạo migration index/constraint cần thiết, không đổi property hai model.
-- [ ] Implement thưởng thanh toán và phạt NoShow idempotent, có clamp/counters/transaction.
-- [ ] Thêm cơ chế khóa theo user và xử lý row khởi tạo thiếu.
-- [ ] Implement cooldown từ ledger; không thêm persisted restriction field.
+- [x] Thêm repository trust score, ledger nội bộ và service tính policy; không tạo API/UI history.
+- [x] Tạo migration index/constraint cần thiết, không đổi property hai model.
+- [x] Implement thưởng thanh toán và phạt NoShow idempotent, có clamp/counters/transaction.
+- [x] Atomic update cho điểm/counters, xử lý row khởi tạo thiếu; không cần application lock.
+- [x] Implement cooldown từ ledger; không thêm persisted restriction field.
+
+Chi tiết triển khai bước 2:
+
+- `IUserTrustScoreRepository` và `ITrustScoreEventRepository` đặt ở Domain theo cấu trúc repository hiện có; implementation EF ở Infrastructure.
+- `TrustScoreService` ở Application, dùng settings và `TimeProvider`, không tham chiếu EF/SQL hoặc Infrastructure. Input `RecordPaymentTrustScoreRequest` / `RecordNoShowTrustScoreRequest` chỉ dùng nội bộ, không phải API cho client gửi điểm.
+- `ITrustScoreUnitOfWork.ExecuteAsync` chỉ mở transaction, thực hiện DB work rồi save/commit; lỗi thì rollback. Không còn `sp_getapplock`, lock theo user, execution strategy hoặc vòng retry riêng.
+- `IUserTrustScoreRepository.ApplyScoreChangeAsync` khởi tạo row nếu thiếu rồi chạy atomic UPDATE, cập nhật điểm/counters trên giá trị hiện tại trong DB. Không cập nhật entity đã đọc bằng EF tracking. `TrustScoreUpdateResult` chỉ là kết quả ScoreBefore/ScoreAfter từ OUTPUT, không phải entity persisted hoặc table mới.
+- Mỗi transaction ghi điểm/counters, ledger và ProcessedMessage atomically. SQL UPDATE thực thi ngay bên trong transaction; nếu lưu ledger/ProcessedMessage thất bại thì cả UPDATE đó bị rollback. Context phải không có pending changes/transaction khác khi bắt đầu; query đọc điểm dùng AsNoTracking.
+- Chống trùng theo messageId/consumer và unique order outcome; không ACK một payload khác user/order bằng messageId cũ. Nếu DB lỗi thì rollback và trả lỗi cho caller; retry message thuộc consumer bước 3, không tạo thêm cơ chế retry ở UnitOfWork.
+- Với hai transaction cùng thấy chưa có ledger/trust row, unique constraint vẫn có thể phát sinh xung đột. Bên lỗi rollback toàn bộ; consumer retry với scope mới thì đọc được record đã commit và bỏ qua duplicate hoặc áp dụng event hợp lệ còn thiếu. Atomic update không tự thay thế cơ chế này.
+- Nếu NoShow chưa có ledger thanh toán thì ném `PaymentTrustScoreNotRecordedException`; chưa ghi ledger hoặc ProcessedMessage. Consumer bước 3 cần retry có delay.
+- Event time bắt buộc UTC, không được vượt quá thời điểm xử lý hơn 5 phút; `CreatedAt` lưu event time, `LastCalculatedAt` lưu processing time. SQL datetime2 được chuẩn hóa Kind=Utc khi trả thời hạn khóa.
+- `GetPurchaseEligibilityAsync` chỉ đọc policy từ DB, chưa enforce tại Order. Nếu user tồn tại nhưng thiếu trust row thì trả policy mặc định 100 điểm, không insert row; consumer sẽ khởi tạo khi có event. Không reset row đã có hoặc gia hạn cooldown khi đọc.
+- Migration `20261111102442_AddTrustScoreIntegrity` chỉ thêm unique index chống trùng order outcome và hai check constraints 0–100, giữ index UserId hiện có. Không thêm table/column, không thêm index cooldown hoặc SQL preflight riêng. Nếu dữ liệu cũ vi phạm, SQL Server từ chối tạo constraint/index; không tự sửa hay xóa lịch sử.
+- Migration mới chỉ được chạy trên database test riêng, chưa áp dụng lên Identity DB đang dùng. Khi triển khai thực tế, kiểm tra dữ liệu và áp dụng migration trước khi bật consumer bước 3.
+- Project `StealDeal.Services.Identity.Tests` đã được dùng để kiểm chứng rồi bỏ khỏi source/solution theo phạm vi MVP đơn giản. Nó không phải dependency runtime; không cần tạo thêm test project để chạy tính năng.
+
+Lịch sử kiểm chứng bước 2 (2026-11-11): phiên bản còn lock đã qua 23 kiểm tra SQL Server trước khi bỏ project test. Bản atomic update được kiểm chứng riêng bằng chương trình tạm ngoài repo: 21 kiểm tra SQL Server pass, gồm 30 update đồng thời, cộng/phạt đồng thời, delta tại trần/sàn, trùng event, đồng thời khởi tạo row với retry và rollback khi lưu ledger lỗi. Không thêm lại project test vào source. Hai model và schema migration không thay đổi; build còn warning NuGet của dependency hiện có.
+
+Áp dụng migration vào Identity DB bằng Visual Studio Package Manager Console (chưa được chạy lên DB ứng dụng trong quá trình implement):
+
+```powershell
+Update-Database -Project StealDeal.Services.Identity.Infrastructure -StartupProject StealDeal.Services.Identity.API
+```
+
+Lệnh dùng connection string của startup project và chỉ áp dụng các migration chưa có trong `__EFMigrationsHistory`. File migration `.cs` chứa các thay đổi DB; `.Designer.cs` và model snapshot là metadata EF, không cần chạy riêng.
 
 ### Bước 3 — Payment và Identity consumer
 
 - [ ] Thêm UserId vào `PaymentCompletedEvent` và factory từ Transaction.
 - [ ] Giữ phát event chỉ trong happy path `Success`; không phát từ return URL hoặc nhánh RefundPending.
 - [ ] Thêm Identity consumer, queue riêng, bindings, retry/DLQ và DI/config.
+- [ ] Retry có giới hạn với scope/DbContext mới cho xung đột DB: duplicate key 2601/2627 và deadlock 1205. Lỗi có thể là SqlException trực tiếp từ atomic SQL hoặc nằm trong DbUpdateException từ SaveChanges. Không ACK trước khi commit; không retry vô hạn lỗi dữ liệu vĩnh viễn.
+- [ ] Dùng cùng tên queue `identity.trust-score-events` cho cả `payment.completed` và `order.no-show`; MVP một consumer, `ConsumerDispatchConcurrency = 1`, prefetch 1, await handler và ACK sau commit. Không tạo queue riêng theo instance hoặc một consumer ghi điểm khác cho từng loại event.
 - [ ] Kiểm tra các bản sao DTO/event envelope, camelCase serialization và messageId khớp Outbox.
 - [ ] Có cách xử lý message cũ thiếu UserId trước khi bật consumer.
 
@@ -348,7 +377,7 @@ Kiểm chứng bước 1 (2026-11-11): build API Identity và Order thành công
 | Dữ liệu cũ | Missing trust row, message thiếu UserId, order trước cutover được xử lý theo deployment notes |
 | Regression | Flow đặt đơn, reserve, VNPAY, release khi hết hạn và quyền truy cập đơn trả tiền không bị hỏng |
 
-Các test transaction, unique index và đồng thời cần chạy trên SQL Server tương thích môi trường thật; EF InMemory không chứng minh được các bảo đảm này. Chỉ thêm test cho hành vi nghiệp vụ và rủi ro thực tế, không viết test chỉ sao chép mapping.
+Các kiểm tra transaction, unique index và đồng thời cần thực hiện trên SQL Server tương thích môi trường thật; EF InMemory không chứng minh được các bảo đảm này. Bản MVP không bắt buộc duy trì project test riêng trong solution; dùng checklist và request kiểm tra khi tích hợp, chỉ thêm automated test khi thực sự cần.
 
 ## 11. Điều kiện chuyển sang FE
 

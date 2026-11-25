@@ -50,6 +50,12 @@ builder.Services.AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IProcessedMessageRepository, ProcessedMessageRepository>();
 builder.Services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();
+builder.Services.AddScoped<IUserTrustScoreRepository, UserTrustScoreRepository>();
+builder.Services.AddScoped<ITrustScoreEventRepository, TrustScoreEventRepository>();
+builder.Services.AddScoped<ITrustScoreUnitOfWork, TrustScoreUnitOfWork>();
+builder.Services.AddScoped<ITrustScoreService, TrustScoreService>();
+builder.Services.AddSingleton(serviceProvider => serviceProvider.GetRequiredService<IOptions<TrustScoreSettings>>().Value);
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();

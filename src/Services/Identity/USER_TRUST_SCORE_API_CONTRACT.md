@@ -2,7 +2,7 @@
 
 Chốt ngày 2026-11-11, thuộc bước 1 của `USER_TRUST_SCORE_IMPLEMENTATION_PLAN.md`.
 
-Đây là contract cho các bước tiếp theo, chưa phải danh sách endpoint mới đã chạy. Bước 1 bổ sung constants, settings có startup validation và DTO; chưa bật consumer, cộng/trừ điểm hoặc hạn chế mua.
+Đây là contract cho các bước tiếp theo, chưa phải danh sách endpoint mới đã chạy. Bước 1 bổ sung constants, settings có startup validation và DTO. Bước 2 đã có service/repository xử lý điểm và tính policy nội bộ; chưa bật consumer, endpoint mới hoặc enforce hạn chế mua tại Order.
 
 ## Phạm vi
 
@@ -10,6 +10,7 @@ Chốt ngày 2026-11-11, thuộc bước 1 của `USER_TRUST_SCORE_IMPLEMENTATIO
 - Profile hiện có hiển thị điểm; không thêm màn hình/API quản lý điểm, lịch sử hoặc hoàn phạt cho user/seller/admin.
 - Có đúng hai route mới: purchase eligibility của chính user và command NoShow của order.
 - Không thêm `Completed`, không phạt việc bỏ thanh toán, không chặn thanh toán của order đã tạo hoặc IPN hợp lệ dựa trên trust score.
+- MVP dùng một instance Identity, một consumer xử lý tuần tự trên cùng queue cho cả payment và NoShow. Repository đã dùng atomic update cho điểm/counters để tránh lost update khi có nhiều consumer; không có application lock. Chống trùng và xung đột khởi tạo row vẫn cần unique constraint, transaction và retry consumer.
 
 ## Cấu hình và tên cố định
 
@@ -44,6 +45,8 @@ Section `TrustScore` tại Identity:
 
 Các service có DTO/constants riêng, không tham chiếu project của service khác chỉ để chia sẻ contract. Giữ tên/giá trị wire contract đồng nhất. Payload Payment bổ sung UserId và event NoShow được nối vào producer/consumer ở bước 3/6, không phát event mới trong bước 1.
 
+Atomic UPDATE dùng điểm hiện tại của DB, clamp 0–100 và tăng counters trong cùng câu lệnh; OUTPUT trả ScoreBefore/ScoreAfter thực tế cho ledger. `TrustScoreUpdateResult` chỉ là object kết quả nội bộ, không thêm table/column hoặc thay property hai model hiện có. Nếu ledger/ProcessedMessage bị unique conflict, transaction rollback cả atomic UPDATE; consumer bước 3 retry bằng scope mới. Xung đột đồng thời tạo row còn thiếu cũng theo cơ chế unique UserId + rollback/retry.
+
 ## Profile: dùng API hiện có
 
 `GET /api/identity/account/profile`, yêu cầu JWT. Hiển thị `userTrustScore.score` từ response hiện có. Không cần gọi thêm API trust score và không trả ledger/ghi chú nội bộ.
@@ -75,6 +78,8 @@ Response `200`: `PurchaseEligibilityResponse` của Identity; Order đọc bằn
 Ngưỡng và quota trong bảng là mặc định; response theo settings hiệu lực. Khi cooldown hết hạn, trả null cho `restrictedUntilUtc`, không tiếp tục trả deadline khóa đã hết. `canCreateOrder` chỉ đánh giá trust score, không khẳng định quota Pending hoặc hàng tồn còn đủ.
 
 Order tự kiểm tra eligibility khi tạo order. FE không bắt buộc gọi trước và không tự tính policy. Identity không gọi Order để đếm Pending. API này chỉ đọc và không gia hạn khóa.
+
+Service bước 2 đọc eligibility mà không mở transaction ghi hoặc tạo/sửa trust row. Nếu user tồn tại nhưng thiếu trust row, trả policy mặc định ở mức 100; consumer khởi tạo row khi ghi nhận event. Không tạo ledger thưởng/phạt hoặc gia hạn khóa khi đọc. API vẫn được mở ở bước 4.
 
 ## NoShow: endpoint mới ở bước 6
 
@@ -124,6 +129,7 @@ Không thêm policy fields hoặc lộ điểm buyer trong lỗi seller đánh d
 
 - Không tự động thưởng/phạt lại toàn bộ order lịch sử khi deploy bước 1 hoặc bật tính năng sau này.
 - Chưa bật consumer mới hay backfill trong bước 1, nên chưa có thay đổi điểm/quyền mua cho user đang tồn tại.
+- Bước 2 đăng ký service/repository nội bộ, chưa có consumer hay controller gọi tự động. Migration `20261111102442_AddTrustScoreIntegrity` cần được áp dụng trước khi bật consumer; unique index và check constraints từ chối dữ liệu cũ trùng/điểm ngoài 0–100. Không có SQL preflight riêng hoặc index tối ưu cooldown trong bản MVP. Chưa áp dụng migration lên database ứng dụng trong quá trình implement.
 - Trước khi bật consumer ở bước 3 và NoShow ở bước 6, phải chốt cutover, xử lý message cũ thiếu UserId và các order Confirmed chưa có ledger thanh toán như plan bước 8.
 - Backfill nếu cần là tác vụ riêng có kiểm soát/idempotency, không reset trust row hoặc chạy lại toàn bộ điểm một cách âm thầm.
 - Chưa có flow miễn/hoàn phạt hoặc đảo NoShow trong MVP. Không yêu cầu UI quản trị để hoàn thành backend/FE của phạm vi này.
