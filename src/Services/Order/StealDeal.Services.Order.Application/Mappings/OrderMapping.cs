@@ -4,12 +4,14 @@ using System.Linq;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Domain.Models;
+using StealDeal.Services.Order.Domain.Constants;
+using StealDeal.Services.Order.Domain.Policies;
 
 namespace StealDeal.Services.Order.Application.Mappings
 {
     public static class OrderMapping
     {
-        public static OrderProfile ToEntity(this CreateOrderRequest request, Guid userId)
+        public static OrderProfile ToEntity(this CreateOrderRequest request, Guid userId, DateTime? pickupDeadlineUtc)
         {
             var orderId = Guid.NewGuid();
             var items = request.Items.Select(itemRequest => new OrderItem
@@ -26,11 +28,12 @@ namespace StealDeal.Services.Order.Application.Mappings
             var subtotalSum = items.Sum(i => i.Subtotal);
             var totalAmount = subtotalSum + request.DeliveryFee - request.VoucherDiscount;
 
-            // Generate a simple pickup code if it is a Pickup delivery type
+            // Combine the order ID prefix with a fresh GUID prefix for pickup orders.
             string? pickupCode = null;
             if (request.DeliveryType.Equals("Pickup", StringComparison.OrdinalIgnoreCase))
             {
-                pickupCode = Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+                pickupCode = (orderId.ToString("N").Substring(0, 5)
+                    + Guid.NewGuid().ToString("N").Substring(0, 5)).ToUpperInvariant();
             }
 
             return new OrderProfile
@@ -47,10 +50,9 @@ namespace StealDeal.Services.Order.Application.Mappings
                 DeliveryType = request.DeliveryType.Trim(),
                 DeliveryAddress = request.DeliveryAddress.Trim(),
                 PickupCode = pickupCode,
-                Status = "Pending", // Default initial status
-                PickupDeadline = request.DeliveryType.Equals("Pickup", StringComparison.OrdinalIgnoreCase) 
-                    ? DateTime.UtcNow.AddDays(1) // Example default: 24h deadline to pickup
-                    : null,
+                Status = OrderStatuses.Pending,
+                PickupDeadline = pickupDeadlineUtc,
+                PickupDeadlineVerified = pickupDeadlineUtc.HasValue,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 Items = items
@@ -60,6 +62,8 @@ namespace StealDeal.Services.Order.Application.Mappings
         public static OrderResponse ToResponse(this OrderProfile order)
         {
             if (order == null) return null!;
+
+            var noShowIneligibleReason = OrderNoShowPolicy.GetIneligibleReason(order, DateTime.UtcNow);
 
             return new OrderResponse
             {
@@ -76,7 +80,10 @@ namespace StealDeal.Services.Order.Application.Mappings
                 DeliveryAddress = order.DeliveryAddress,
                 PickupCode = order.PickupCode,
                 Status = order.Status,
-                PickupDeadline = order.PickupDeadline,
+                PickupDeadline = order.PickupDeadline.HasValue
+                    ? DateTime.SpecifyKind(order.PickupDeadline.Value, DateTimeKind.Utc) : null,
+                CanMarkNoShow = noShowIneligibleReason == null,
+                NoShowIneligibleReason = noShowIneligibleReason,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
                 Items = order.Items.Select(i => i.ToResponse()).ToList()

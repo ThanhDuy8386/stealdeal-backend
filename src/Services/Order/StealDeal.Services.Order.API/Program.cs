@@ -28,6 +28,7 @@ builder.Services.Configure<OutboxSettings>(builder.Configuration.GetSection("Out
 builder.Services.Configure<OrderStatusConsumerSettings>(builder.Configuration.GetSection("OrderStatusConsumer"));
 builder.Services.Configure<CartServiceSettings>(builder.Configuration.GetSection("CartService"));
 builder.Services.Configure<StoreServiceSettings>(builder.Configuration.GetSection("StoreService"));
+builder.Services.Configure<IdentityServiceSettings>(builder.Configuration.GetSection("IdentityService"));
 
 // ── Repositories ──────────────────────────────────────────
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
@@ -54,6 +55,7 @@ builder.Services.AddHttpClient<ICartClient, CartHttpClient>((serviceProvider, ht
         .GetRequiredService<Microsoft.Extensions.Options.IOptions<CartServiceSettings>>()
         .Value;
     httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+    httpClient.Timeout = TimeSpan.FromSeconds(10);
 });
 
 builder.Services.AddHttpClient<IStoreCatalogClient, StoreCatalogHttpClient>((serviceProvider, httpClient) =>
@@ -62,6 +64,16 @@ builder.Services.AddHttpClient<IStoreCatalogClient, StoreCatalogHttpClient>((ser
         .GetRequiredService<Microsoft.Extensions.Options.IOptions<StoreServiceSettings>>()
         .Value;
     httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+    httpClient.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<IIdentityClient, IdentityHttpClient>((serviceProvider, httpClient) =>
+{
+    var settings = serviceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityServiceSettings>>()
+        .Value;
+    httpClient.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+    httpClient.Timeout = TimeSpan.FromSeconds(10);
 });
 
 // ── Authentication / JWT ──────────────────────────────────

@@ -8,11 +8,12 @@ namespace StealDeal.Services.Order.Application.Services.Interfaces
 {
     public interface IOrderService
     {
-        Task<OrderResponse> CreateOrderAsync(Guid userId, CreateOrderRequest request);
-        Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles);
+        Task<OrderResponse> CreateOrderAsync(Guid userId, string accessToken, CreateOrderRequest request, CancellationToken cancellationToken = default);
+        Task<OrderResponse> GetOrderByIdAsync(Guid orderId, Guid userId, IEnumerable<string> roles, CancellationToken cancellationToken = default);
         Task<IEnumerable<OrderResponse>> GetMyOrdersAsync(Guid userId);
-        Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid ownerId);
-        Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request);
+        Task<IEnumerable<OrderResponse>> GetStoreOrdersAsync(Guid storeId, Guid userId, IEnumerable<string> roles, CancellationToken cancellationToken = default);
+        Task<OrderResponse> UpdateOrderStatusAsync(Guid orderId, Guid userId, IEnumerable<string> roles, UpdateOrderStatusRequest request, CancellationToken cancellationToken = default);
+        Task<OrderResponse> MarkNoShowAsync(Guid orderId, Guid userId, IEnumerable<string> roles, MarkOrderNoShowRequest? request, CancellationToken cancellationToken = default);
         Task<OrderReviewEligibilityResponse> CheckReviewEligibilityAsync(Guid orderId, Guid buyerId, Guid bagId);
     }
 }

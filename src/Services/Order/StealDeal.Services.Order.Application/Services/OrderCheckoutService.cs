@@ -8,16 +8,13 @@ namespace StealDeal.Services.Order.Application.Services
     public class OrderCheckoutService : IOrderCheckoutService
     {
         private readonly ICartClient _cartClient;
-        private readonly IStoreCatalogClient _storeCatalogClient;
         private readonly IOrderService _orderService;
 
         public OrderCheckoutService(
             ICartClient cartClient,
-            IStoreCatalogClient storeCatalogClient,
             IOrderService orderService)
         {
             _cartClient = cartClient;
-            _storeCatalogClient = storeCatalogClient;
             _orderService = orderService;
         }
 
@@ -44,12 +41,9 @@ namespace StealDeal.Services.Order.Application.Services
 
                 ValidateCart(userId, request.StoreId, cart);
 
-                var createOrderRequest = await BuildCreateOrderRequestAsync(
-                    request,
-                    cart,
-                    cancellationToken);
+                var createOrderRequest = BuildCreateOrderRequest(request, cart);
 
-                var order = await _orderService.CreateOrderAsync(userId, createOrderRequest);
+                var order = await _orderService.CreateOrderAsync(userId, accessToken, createOrderRequest, cancellationToken);
 
                 await _cartClient.DeleteCartAsync(
                     accessToken,
@@ -71,49 +65,26 @@ namespace StealDeal.Services.Order.Application.Services
             }
         }
 
-        private async Task<CreateOrderRequest> BuildCreateOrderRequestAsync(
-            CheckoutFromCartRequest request,
-            CartClientResponse cart,
-            CancellationToken cancellationToken)
+        private static CreateOrderRequest BuildCreateOrderRequest(
+            CheckoutFromCartRequest request, CartClientResponse cart)
         {
-            var orderItems = new List<CreateOrderItemRequest>();
-            string? storeNameSnapshot = null;
-
-            foreach (var cartItem in cart.Items)
-            {
-                var bag = await _storeCatalogClient.GetBagAsync(
-                    cartItem.BagId,
-                    cancellationToken);
-
-                if (bag is null)
-                {
-                    throw new NotFoundException($"Bag with ID {cartItem.BagId} not found.");
-                }
-
-                ValidateBagForCheckout(bag, request.StoreId, cartItem.Quantity);
-
-                storeNameSnapshot ??= bag.StoreName;
-
-                orderItems.Add(new CreateOrderItemRequest
-                {
-                    BagId = bag.Id,
-                    BagNameSnapshot = bag.Name,
-                    UnitPriceSnapshot = bag.SalePrice,
-                    Quantity = cartItem.Quantity
-                });
-            }
-
             return new CreateOrderRequest
             {
                 StoreId = request.StoreId,
-                StoreNameSnapshot = storeNameSnapshot ?? string.Empty,
+                StoreNameSnapshot = string.Empty,
                 ContactNameSnapshot = request.ContactNameSnapshot,
                 ContactPhoneSnapshot = request.ContactPhoneSnapshot,
                 DeliveryFee = 0,
                 VoucherDiscount = 0,
                 DeliveryType = request.DeliveryType,
                 DeliveryAddress = request.DeliveryAddress ?? string.Empty,
-                Items = orderItems
+                Items = cart.Items.Select(item => new CreateOrderItemRequest
+                {
+                    BagId = item.BagId,
+                    BagNameSnapshot = item.BagNameSnapshot,
+                    UnitPriceSnapshot = item.UnitPriceSnapshot,
+                    Quantity = item.Quantity
+                }).ToList()
             };
         }
 
@@ -179,73 +150,6 @@ namespace StealDeal.Services.Order.Application.Services
             {
                 throw new BadRequestException("Cart contains invalid item quantity.");
             }
-        }
-
-        private static void ValidateBagForCheckout(
-            StoreBagClientResponse bag,
-            Guid storeId,
-            int requestedQuantity)
-        {
-            if (bag.StoreId != storeId)
-            {
-                throw new BadRequestException($"Bag with ID {bag.Id} does not belong to the selected store.");
-            }
-
-            if (requestedQuantity <= 0)
-            {
-                throw new BadRequestException("Quantity must be greater than zero.");
-            }
-
-            if (bag.QuantityRemaining < requestedQuantity)
-            {
-                throw new BadRequestException($"Bag '{bag.Name}' does not have enough stock.");
-            }
-
-            var pickupEndUtc = ToUtc(bag.PickupEndTime);
-            var expiryUtc = ToUtc(bag.ExpiryDate);
-            var now = DateTime.UtcNow;
-
-            if (pickupEndUtc <= now || expiryUtc <= now)
-            {
-                throw new BadRequestException($"Bag '{bag.Name}' is no longer available for checkout.");
-            }
-
-            if (IsKnownUnavailableStatus(bag.Status))
-            {
-                throw new BadRequestException($"Bag '{bag.Name}' is not available for checkout.");
-            }
-        }
-
-        private static bool IsKnownUnavailableStatus(string? status)
-        {
-            if (string.IsNullOrWhiteSpace(status))
-            {
-                return false;
-            }
-
-            return status.Trim().ToLowerInvariant() switch
-            {
-                "inactive" => true,
-                "deleted" => true,
-                "soldout" => true,
-                "sold_out" => true,
-                "sold out" => true,
-                "expired" => true,
-                "cancelled" => true,
-                "canceled" => true,
-                "draft" => true,
-                _ => false
-            };
-        }
-
-        private static DateTime ToUtc(DateTime value)
-        {
-            return value.Kind switch
-            {
-                DateTimeKind.Utc => value,
-                DateTimeKind.Local => value.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
-            };
         }
     }
 }

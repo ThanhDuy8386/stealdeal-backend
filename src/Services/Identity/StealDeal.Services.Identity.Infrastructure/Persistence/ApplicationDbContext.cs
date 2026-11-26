@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using StealDeal.Services.Identity.Domain.Models;
+using StealDeal.Services.Identity.Domain.Constants;
 
 namespace StealDeal.Services.Identity.Infrastructure.Persistence
 {
@@ -88,6 +89,8 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
             modelBuilder.Entity<UserTrustScore>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.ToTable("UserTrustScores", table =>
+                    table.HasCheckConstraint("CK_UserTrustScores_Score", "[Score] >= 0 AND [Score] <= 100"));
 
                 entity.HasOne(e => e.User)
                       .WithOne(u => u.UserTrustScore)
@@ -103,6 +106,13 @@ namespace StealDeal.Services.Identity.Infrastructure.Persistence
                 entity.Property(e => e.ReferenceId).HasMaxLength(100);
                 entity.Property(e => e.ReferenceType).HasMaxLength(100);
                 entity.Property(e => e.Note).HasMaxLength(1000);
+                entity.HasIndex(e => e.UserId);
+                entity.ToTable("TrustScoreEvents", table =>
+                    table.HasCheckConstraint("CK_TrustScoreEvents_ScoreAfter", "[ScoreAfter] >= 0 AND [ScoreAfter] <= 100"));
+                entity.HasIndex(e => new { e.UserId, e.ReferenceType, e.ReferenceId, e.EventType })
+                    .HasDatabaseName("UX_TrustScoreEvents_OrderOutcome")
+                    .IsUnique()
+                    .HasFilter($"[ReferenceType] = N'{TrustScoreReferenceTypes.Order}' AND [ReferenceId] IS NOT NULL AND [EventType] IN (N'{TrustScoreEventTypes.PaymentSucceeded}', N'{TrustScoreEventTypes.OrderNoShow}')");
 
                 entity.HasOne(e => e.User)
                       .WithMany(u => u.TrustScoreEvents)

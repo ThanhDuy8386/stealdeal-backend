@@ -365,7 +365,15 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("TrustScoreEvents");
+                    b.HasIndex("UserId", "ReferenceType", "ReferenceId", "EventType")
+                        .IsUnique()
+                        .HasDatabaseName("UX_TrustScoreEvents_OrderOutcome")
+                        .HasFilter("[ReferenceType] = N'Order' AND [ReferenceId] IS NOT NULL AND [EventType] IN (N'PaymentSucceeded', N'OrderNoShow')");
+
+                    b.ToTable("TrustScoreEvents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TrustScoreEvents_ScoreAfter", "[ScoreAfter] >= 0 AND [ScoreAfter] <= 100");
+                        });
                 });
 
             modelBuilder.Entity("StealDeal.Services.Identity.Domain.Models.User", b =>
@@ -498,7 +506,10 @@ namespace StealDeal.Services.Identity.Infrastructure.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("UserTrustScores");
+                    b.ToTable("UserTrustScores", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_UserTrustScores_Score", "[Score] >= 0 AND [Score] <= 100");
+                        });
                 });
 
             modelBuilder.Entity("AdminRole", b =>

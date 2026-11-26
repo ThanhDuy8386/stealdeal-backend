@@ -23,6 +23,7 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
             modelBuilder.Entity<OrderProfile>(entity =>
             {
                 entity.HasKey(o => o.Id);
+                entity.HasIndex(o => new { o.UserId, o.Status });
 
                 entity.Property(o => o.StoreNameSnapshot)
                     .IsRequired()
@@ -55,6 +56,9 @@ namespace StealDeal.Services.Order.Infrastructure.Persistency
 
                 entity.Property(o => o.PickupCode)
                     .HasMaxLength(50);
+
+                entity.Property(o => o.PickupDeadlineVerified)
+                    .HasDefaultValue(false);
 
                 entity.Property(o => o.Status)
                     .IsRequired()

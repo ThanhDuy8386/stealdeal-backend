@@ -3,8 +3,11 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Application.DTOs.Requests;
 using StealDeal.Services.Order.Application.Services.Interfaces;
+using StealDeal.Services.Order.Application.Constants;
 
 namespace StealDeal.Services.Order.API.Controllers
 {
@@ -25,11 +28,10 @@ namespace StealDeal.Services.Order.API.Controllers
 
         [HttpPost]
         [Authorize]
-        public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
+        public async Task<IActionResult> Create([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
-            var result = await _orderService.CreateOrderAsync(userId, request);
-            // var result = await _orderService.CreateOrderAsync(Guid.Parse("6BFE535E-E205-4031-88A8-36D8993863F7"), request);
+            var result = await _orderService.CreateOrderAsync(userId, GetBearerToken(), request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -52,11 +54,11 @@ namespace StealDeal.Services.Order.API.Controllers
 
         [HttpGet("{id:guid}")]
         [Authorize]
-        public async Task<IActionResult> GetById(Guid id)
+        public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var roles = GetCurrentUserRoles();
-            var result = await _orderService.GetOrderByIdAsync(id, userId, roles);
+            var result = await _orderService.GetOrderByIdAsync(id, userId, roles, cancellationToken);
             return Ok(result);
         }
 
@@ -70,21 +72,34 @@ namespace StealDeal.Services.Order.API.Controllers
         }
 
         [HttpGet("store/{storeId:guid}")]
-        [Authorize(Roles = "Seller,Admin")]
-        public async Task<IActionResult> GetStoreOrders(Guid storeId)
+        [Authorize(Roles = OrderRoles.SellerOrAdministrator)]
+        public async Task<IActionResult> GetStoreOrders(Guid storeId, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
-            var result = await _orderService.GetStoreOrdersAsync(storeId, userId);
+            var result = await _orderService.GetStoreOrdersAsync(storeId, userId, GetCurrentUserRoles(), cancellationToken);
             return Ok(result);
         }
 
         [HttpPatch("{id:guid}/status")]
         [Authorize]
-        public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateOrderStatusRequest request)
+        public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateOrderStatusRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var roles = GetCurrentUserRoles();
-            var result = await _orderService.UpdateOrderStatusAsync(id, userId, roles, request);
+            var result = await _orderService.UpdateOrderStatusAsync(id, userId, roles, request, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Marks an eligible order as NoShow; Identity updates trust score asynchronously.</summary>
+        [HttpPost("{id:guid}/no-show")]
+        [Authorize(Roles = OrderRoles.SellerOrAdministrator)]
+        [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> MarkNoShow(Guid id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] MarkOrderNoShowRequest? request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _orderService.MarkNoShowAsync(
+                id, GetCurrentUserId(), GetCurrentUserRoles(), request, cancellationToken);
             return Ok(result);
         }
 
@@ -106,11 +121,11 @@ namespace StealDeal.Services.Order.API.Controllers
                       ?? User.FindFirstValue("sub");
 
 
-            if (string.IsNullOrEmpty(sub))
+            if (!Guid.TryParse(sub, out var userId) || userId == Guid.Empty)
                 throw new Application.Exceptions.UnauthorizedException("User is not authenticated.");
 
 
-            return Guid.Parse(sub);
+            return userId;
         }
 
         private string[] GetCurrentUserRoles()

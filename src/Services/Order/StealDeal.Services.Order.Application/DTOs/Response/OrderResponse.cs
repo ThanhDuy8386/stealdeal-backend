@@ -29,6 +29,8 @@ namespace StealDeal.Services.Order.Application.DTOs.Response
         public string? PickupCode { get; set; }
         public string Status { get; set; } = null!;
         public DateTime? PickupDeadline { get; set; }
+        public bool CanMarkNoShow { get; set; }
+        public string? NoShowIneligibleReason { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public List<OrderItemResponse> Items { get; set; } = new();

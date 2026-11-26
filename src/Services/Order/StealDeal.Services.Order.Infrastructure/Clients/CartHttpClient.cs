@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.Extensions.Logging;
 using StealDeal.Services.Order.Application.DTOs.Response;
 using StealDeal.Services.Order.Application.Exceptions;
 using StealDeal.Services.Order.Application.Services.Interfaces;
@@ -9,10 +10,12 @@ namespace StealDeal.Services.Order.Infrastructure.Clients
     public class CartHttpClient : ICartClient
     {
         private readonly HttpClient _httpClient;
+        private readonly ILogger<CartHttpClient> _logger;
 
-        public CartHttpClient(HttpClient httpClient)
+        public CartHttpClient(HttpClient httpClient, ILogger<CartHttpClient> logger)
         {
             _httpClient = httpClient;
+            _logger = logger;
         }
 
         public async Task<string> AcquireCheckoutLockAsync(
@@ -53,17 +56,23 @@ namespace StealDeal.Services.Order.Infrastructure.Clients
                 return;
             }
 
-            using var request = CreateRequest(
-                HttpMethod.Delete,
-                $"api/cart/stores/{storeId}/checkout-lock",
-                accessToken);
-            request.Content = JsonContent.Create(new { lockToken });
+            try
+            {
+                using var request = CreateRequest(
+                    HttpMethod.Delete,
+                    $"api/cart/stores/{storeId}/checkout-lock",
+                    accessToken);
+                request.Content = JsonContent.Create(new { lockToken });
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            await HttpClientErrorMapper.EnsureSuccessOrThrowAsync(
-                response,
-                "Could not release checkout lock.",
-                cancellationToken);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                await HttpClientErrorMapper.EnsureSuccessOrThrowAsync(
+                    response, "Could not release checkout lock.", cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Preserve the checkout result/policy error. The existing Redis lock also has a TTL.
+                _logger.LogWarning(ex, "Could not release checkout lock for store {StoreId}.", storeId);
+            }
         }
 
         public async Task<CartClientResponse> GetCartAsync(

@@ -25,6 +25,7 @@ namespace StealDeal.Services.Order.Domain.Models
         public string Status { get; set; } = null!;
 
         public DateTime? PickupDeadline { get; set; } // Cho phép null nếu không áp dụng deadline lấy hàng
+        public bool PickupDeadlineVerified { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -6,6 +6,7 @@ namespace StealDeal.Services.Identity.Application.Services.Interfaces
     public interface IAccountService
     {
         Task<UserDetailResponse> GetProfileAsync(Guid userId);
+        Task<PurchaseEligibilityResponse> GetPurchaseEligibilityAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<UserDetailResponse> UpdateProfileAsync(Guid userId, UpdateMyProfileRequest request);
         Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
         Task<UserDetailResponse> UploadAvatarAsync(Guid userId, Stream fileStream, string originalFileName, string contentType, long fileSize, CancellationToken cancellationToken = default);

@@ -22,6 +22,7 @@ namespace StealDeal.Services.Payment.Application.Events
                 MessageId = messageId,
                 OccurredAtUtc = DateTime.UtcNow,
                 OrderId = transaction.OrderId,
+                UserId = transaction.UserId,
                 PaymentId = transaction.Id,
                 Amount = transaction.Amount,
                 PaymentMethod = transaction.PaymentMethod,
